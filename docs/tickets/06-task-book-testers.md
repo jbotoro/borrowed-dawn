@@ -2,9 +2,9 @@
 
 Label: wayfinder:task (HITL)
 Blocked by: none
-Claimed by: none
-Status: open
-Window: tonight or Wednesday morning
+Claimed by: human, 2026-09-16 11:10
+Status: resolved in a different shape. The human tests asynchronously whenever there is time through `docs/playtest.md` and screen-shares when playing live; colleagues test through the deployed link uncoached and report in the same doc. No fixed 19:00 and 18:00 sessions are booked. Gates that require an uncoached tester record "independent validation: <name> via link" or "missing" honestly.
+Window: continuous
 
 ## Question
 

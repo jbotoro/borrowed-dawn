@@ -1,15 +1,19 @@
-# 05 Grilling: theme and look
+# 05 Grilling: accept the art direction at the first visual gate
 
 Label: wayfinder:grilling (HITL)
-Blocked by: 04
+Blocked by: none (rewritten 2026-09-16 10:55 under the redrawn destination)
 Claimed by: none
 Status: open
-Window: Wednesday afternoon, before juice work starts
+Window: Wednesday 12:00-13:00, on the running side-view skeleton
 
 ## Question
 
-What are the player and the enemies, what is the palette, what is the joke the room gets, and what does the arena look like, given that everything is procedural low-poly geometry and the camera is fixed? The answer must be expressible as geometry primitives, colors, and one or two shader tricks, not as imported models.
+Astra proposed "Borrowed Dawn": a lantern courier (tapered dark body, pale cap, two short legs, amber core, needle weapon) in the Cinder Belfry (charcoal blue stone, pale platform rims, chains, hollow cylinders, one enormous dark bell), with vermilion attack signals. Does the silhouette read at gameplay scale, does the mood land in the first three seconds, and does the palette keep platform edges and attack signals legible? Everything must be primitives, colors, light, and motion.
 
 ## How it resolves
 
-A grilling round on the running skeleton: three candidate themes, each with a screenshot mockup made by an agent in the actual renderer, one chosen. Update `CONTEXT.md` with the fiction terms once chosen.
+The user looks at the skeleton (screenshots from the agent loop plus play) and either accepts, adjusts a small number of tuning and material values, or names a specific objection. On accept, `CONTEXT.md` gains the fiction terms (courier, ember, Longwick, Dawn Core, Bellkeeper, Cinder Belfry) and the audio direction ticket unblocks.
+
+## Resolution
+
+Recorded here when decided.

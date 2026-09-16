@@ -1,3 +1,5 @@
+> SUPERSEDED 2026-09-16 10:20. This is the v1 plan for the retired arena-survivor destination. The live plan is `docs/plan-astra-v2.md`.
+
 1. **Tuesday tonight — lock the run sheet; planning only.**
 
    **Exit criterion:** A single checklist covers the required game, four milestone URLs, timed gates, playtests, capture routine, and demo. No implementation begins.

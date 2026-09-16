@@ -1,0 +1,27 @@
+Goal: write the world bible and vision document for "One More Run" (working title; propose a better one), a Hollow Knight-adjacent side-view action game built by one engineer directing AI coding agents over three days, presented Friday 2026-09-18, and then possibly extended afterwards. The document gives continuity and a shared vision for everything that comes after the first area: additional areas, bosses, verbs, rewards, enemies, and audio, so that any future session can add a piece that fits without re-deciding the whole. Your earlier plan for this project proposed "Borrowed Dawn" (a lantern courier stealing sunrise from the machines that hoard it; areas Cinder Belfry, Glass Orchard, Ash Observatory; bosses the Bellkeeper, the Pruner, the Last Astronomer; a launch kit of move, jump, directional attack, dash; Longwick reach upgrade; Dawn Core payoff; expansion order parry, upward dash, then equipment and a vendor). Build on it, or revise it where the constraints below demand.
+
+Constraints:
+- The genre is the certainty: side-view exploration with meaningful fights, one learnable boss per area, rewards from exploration and bosses, no score, checkpoint respawn. The fiction must NOT copy Hollow Knight's: no bug kingdom, no insect characters, no nail-and-soul vocabulary, no hollow-and-void melancholy as the default mood. Any setting is allowed (industrial, medieval, fantasy, East Asian, mythic, other) as long as it is distinct, coherent, and achievable with procedural low-poly primitives, palette, emissive light, silhouette, and motion; no drawn art, no imported models, no text-heavy lore dumps.
+- Rendering is side-view 2.5D in Three.js: gameplay on a flat plane, depth from geometry layers, fog, bloom. Characters are groups of primitives (cones, boxes, cylinders, spheres, lathes) with a strong silhouette at small screen size.
+- Every fight matters: enemies are few and placed by hand; never a swarm. Bosses are two or three telegraphed attacks with recovery windows, learnable by an uncoached player in ten minutes of attempts.
+- Verb kit at launch: move, jump, directional attack, dash with invulnerability. Expansion candidates: parry, upward dash, wall jump, pogo, charged attack, a ranged tool, equipment choice, a vendor. Each verb added should unlock traversal or counterplay that the world visibly gates.
+- Audio: one CC0 music loop per area, generated sound effects, procedural fallback.
+- Build reality: one area (four rooms) is built this week; each further area is a future block of roughly one to two days of agent time. The document must be usable as a brief for those blocks.
+
+Must decide (write these as the document's sections, in this order):
+1. Title options (three), the one-line hook, the premise in one paragraph, tone and mood in three adjectives and a sentence on what it is not.
+2. The player: who they are, what they carry, silhouette description as primitives, how their kit grows and what each new verb means in the fiction.
+3. Design pillars: five at most, each one sentence plus a test a future session can apply ("does this addition ...?").
+4. The world: a map of four to five areas in intended order (the first is built), each with theme, procedural identity (shapes, palette, light), two or three signature enemies (silhouette, behavior, telegraph, what they teach), the boss (silhouette, two or three attacks with telegraph and recovery, phase change, what its defeat unlocks), the reward the area grants, and the traversal gate that the previous reward opens. Include the built first area consistent with the shipped four rooms (Cinder Landing, Chain Gallery, Wick Cache, Belfry) if you keep Borrowed Dawn, or a replacement that maps onto those four rooms without changing their layout roles.
+5. Enemy roster rules: how enemies are designed so every fight matters (telegraph, punish window, health in hits, placement rules, never a swarm).
+6. Rewards and progression: the reward vocabulary (verb, reach, health, traversal), how rewards are signposted, what a vendor would sell if added, what is deliberately never rewarded (no grinding, no currency sinks that gate progress).
+7. Lore delivery: how the story is told without text dumps (environment, one line at pickups, boss introductions, the ending choice), with the exact one-line texts for the pickups and bosses of the first area.
+8. Art direction rules per area: palette hexes (three to five per area), light sources, fog, what reads as safe versus dangerous, the rules that keep platform edges and attack signals legible.
+9. Audio direction: mood per area, instrumentation hints for choosing a CC0 loop, the sound effect list with a short prompt for each.
+10. Expansion order with rough effort: the next five things to build after the first area, each with what it needs from earlier work and a one-line exit criterion.
+11. A fit checklist: ten yes/no questions a future session asks before adding anything.
+
+Out of scope: file layout, code structure, engine patterns, schedules for this week (they exist elsewhere), the demo.
+
+Output: the document itself in Markdown, ready to save as `docs/vision.md`, with those eleven sections as headings. Be concrete and specific; prefer names, shapes, colors, and numbers over adjectives. No preamble.
+Boundary: plan at the product and world level only. Do not prescribe file layout, class or module structure, framework patterns, or library choices; a separate code plan owns those.
