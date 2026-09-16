@@ -3,3 +3,6 @@ dist
 dist-snapshot
 .DS_Store
 *.log
+.claude/
+.agents
+CLAUDE.local.md

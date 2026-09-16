@@ -2,8 +2,12 @@
 
 Label: wayfinder:task (HITL for git and GitHub, AFK for files)
 Blocked by: none (02 closed)
-Claimed by: agent (file part done 2026-09-16), human part open
-Status: agent part done, human part open
+Claimed by: agent and human, 2026-09-16
+Status: closed 2026-09-16 09:15
+
+## Resolution
+
+Repo: https://github.com/jbotoro/one-more-run (public; branch renamed from `main,` to `main`). Pages enabled with source GitHub Actions; first run failed with a 404 because it ran before Pages existed; re-run deployed. Site: https://jbotoro.github.io/one-more-run/ renders the boot scene (arena disc, blue wall ring, glowing octahedron, tuning panel) as confirmed by the human's screenshot. Confirmed 2026-09-16 09:25: the Chrome DevTools MCP server starts from `.mcp.json` in a Claude Code session opened from this directory, launches its own Chrome, and returns a screenshot and console messages for `http://localhost:5173/one-more-run/?screenshot=1`. Console at boot: vite connected, `[one-more-run] boot ok`, a lil-gui form-field accessibility issue (24 fields, harmless), and a 404 for `/favicon.ico` (silenced with an empty data-URI icon in `index.html`).
 
 ## Agent part, done 2026-09-16
 
