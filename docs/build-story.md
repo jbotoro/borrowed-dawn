@@ -52,6 +52,12 @@ The render agent re-read its own work through the browser and fixed the four rep
 
 Human guidance in this window: one request, to pause at the next opportunity and organize the work into commits for a clear GitHub history.
 
+### 2026-09-16 12:40-13:10: pushed, deployed, reviewed, gated
+
+The human pushed four commits. CI deployed the side-view game to the root URL with the retired arena still playable at its own path. Fable checked the deployed build through the browser: the bot ran, died, respawned, and looped on the live site. Codex reviewed the skeleton commit and returned six findings. Fable confirmed five against the code and fixed them: edge inputs replayed into every tick of a multi-tick frame (Escape paused and resumed in one frame), the Belfry's Gallery door sat in the walking path to the shortcut (moved onto a ledge with a step), stomp waves fired before the boss touched the floor, a lethal hit could be overwritten by a pickup or checkpoint in the same tick, and the hazard capacity was hard-coded in two files. The sixth, a scaling complaint about 2,000 enemies, was rejected: rooms hold three; the number came from a stale line in the review focus that the arena left behind, now corrected. The bot then deadlocked on the new ledge, which took one extra waypoint to fix, and the shortcut was verified by driving the player by hand. Snapshot: `builds/m2-skeleton/`.
+
+Human guidance in this window: "pushed, run the codex review and prep the m2 gate".
+
 ## Human guidance, counted
 
 | When | What the human said or decided | Words, roughly |
