@@ -35,7 +35,9 @@ Guardrails that apply regardless of which file you read first:
 Review as a staff-level TypeScript and Three.js engineer building a real-time
 browser game. Prioritize, in order: correctness bugs in the fixed-timestep
 simulation under `src/game/`; allocation or per-frame work that will hurt
-frame rate with 2000 enemies; gameplay or feel numbers hard-coded outside
+frame rate (rooms hold a handful of enemies, hazards, and effects, so
+per-frame allocation and per-entity DOM or scene-graph churn matter more
+than algorithmic scaling); gameplay or feel numbers hard-coded outside
 `src/tuning.ts`; three imports leaking into `src/game/`; DOM or three code
 that would break the `?autoplay=1` bot or `?screenshot=1` mode; missing
 Vitest coverage on `src/game/` logic. Cite file paths and line numbers for

@@ -20,7 +20,7 @@ describe("bellkeeper", () => {
   it("stays dormant until the player enters the arena", () => {
     const { boss, room, events } = bossSetup();
     const away = playerAt(boss.arenaMinX - 5, 1);
-    const hazards = createHazards();
+    const hazards = createHazards(tuning.world.hazardCapacity);
     let t = 0;
     for (let i = 0; i < 120; i += 1) {
       stepBoss(boss, away, room, hazards, t, DT, tuning, events);
@@ -35,7 +35,7 @@ describe("bellkeeper", () => {
   it("alternates sweep and stomp out of idle", () => {
     const { boss, room, events } = bossSetup();
     const player = playerAt(boss.pos.x - 4, 1);
-    const hazards = createHazards();
+    const hazards = createHazards(tuning.world.hazardCapacity);
     const seen: BossState[] = [];
     let t = 0;
     for (let i = 0; i < 1400; i += 1) {
@@ -59,7 +59,7 @@ describe("bellkeeper", () => {
   it("swings a hitbox in front of the body only while the sweep is active", () => {
     const { boss, room, events } = bossSetup();
     const player = playerAt(boss.pos.x - 4, 1);
-    const hazards = createHazards();
+    const hazards = createHazards(tuning.world.hazardCapacity);
     const out: Rect = { x: 0, y: 0, w: 0, h: 0 };
     let t = 0;
     expect(bossAttackHitbox(boss, tuning, out)).toBeNull();
@@ -81,7 +81,7 @@ describe("bellkeeper", () => {
   it("cracks once at the phase threshold and switches to phase two", () => {
     const { boss, room, events } = bossSetup();
     const player = playerAt(boss.pos.x - 4, 1);
-    const hazards = createHazards();
+    const hazards = createHazards(tuning.world.hazardCapacity);
     let t = 0;
     stepBoss(boss, player, room, hazards, t, DT, tuning, events);
     t += DT;
@@ -102,7 +102,7 @@ describe("bellkeeper", () => {
   it("chains sweep straight into stomp with no idle in phase two", () => {
     const { boss, room, events } = bossSetup();
     const player = playerAt(boss.pos.x - 4, 1);
-    const hazards = createHazards();
+    const hazards = createHazards(tuning.world.hazardCapacity);
     let t = 0;
     stepBoss(boss, player, room, hazards, t, DT, tuning, events);
     t += DT;

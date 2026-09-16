@@ -92,6 +92,7 @@ export const tuning = {
     hurtFlashMs: 120
   },
   world: {
+    hazardCapacity: 16,
     checkpointWidth: 1,
     checkpointHeight: 1.5,
     pickupWidth: 0.7,

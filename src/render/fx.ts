@@ -16,7 +16,6 @@ const COLOR_BOSS_HIT = 0xff8a2b;
 const COLOR_HAZARD = 0xff4a22;
 
 const TELEGRAPH_LINES = 6;
-const HAZARD_SLOTS = 16;
 const BURST_SLOTS = 8;
 const HALO_SLOTS = 4;
 
@@ -102,6 +101,7 @@ export function createFx(tuning: Tuning): Fx {
   ring.visible = false;
   group.add(ring);
 
+  const HAZARD_SLOTS = tuning.world.hazardCapacity;
   const hazards: THREE.Mesh[] = [];
   for (let i = 0; i < HAZARD_SLOTS; i++) {
     const mesh = new THREE.Mesh(unitBox, hazardMat);

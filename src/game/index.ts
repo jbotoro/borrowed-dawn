@@ -25,7 +25,7 @@ export { attackHitbox, attackRect, applyHurt, createPlayer, playerReach } from "
 export { aabbOf, moveAndCollide, rectsOverlap, createMoveResult } from "./physics";
 export { enemyConfig, hurtEnemy, spawnEnemies, stepEnemies } from "./enemies";
 export { bossAttackHitbox, bossBodyIsHazard, bossBodyRect, hurtBoss, spawnBoss, stepBoss } from "./boss";
-export { createHazards, spawnHazard, stepHazards, HAZARD_CAPACITY } from "./hazards";
+export { createHazards, spawnHazard, stepHazards } from "./hazards";
 export { createProgress } from "./progress";
 
 const emptyRoom: Room = {
@@ -64,7 +64,7 @@ export function createGame(deps: GameDeps): Game {
     : defaultStartPos(startRoom);
 
   const player = createPlayer();
-  const hazards = createHazards();
+  const hazards = createHazards(tuning.world.hazardCapacity);
   const solids: Rect[] = [];
   const breakableHp = new Map<string, number>();
   let room: Room = startRoom;
@@ -218,16 +218,19 @@ export function createGame(deps: GameDeps): Game {
       state.pickups = pickupsFor(room, state.progress);
     }
 
+    if (player.health <= 0) {
+      state.time += dt;
+      state.tick += 1;
+      onDeath(state, state.time);
+      return;
+    }
+
     collectPickups(state, tuning, state.events);
     touchingCheckpoint = touchCheckpoint(state, room, tuning, touchingCheckpoint, state.events);
     checkDoors(state, room, tuning);
 
     state.time += dt;
     state.tick += 1;
-
-    if (player.health <= 0 && state.phase === "playing") {
-      onDeath(state, state.time);
-    }
   }
 
   const game: Game = {

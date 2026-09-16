@@ -234,6 +234,17 @@ export function stepBoss(
       boss.pos.y = floorY + lift;
       boss.state = "stompSlam";
       boss.stateUntil = t + cfg.stompSlamMs / 1000;
+    }
+    return;
+  }
+
+  if (boss.state === "stompSlam") {
+    const dur = Math.max(1e-6, cfg.stompSlamMs / 1000);
+    boss.pos.y = floorY + lift * (1 - clamp01(1 - (boss.stateUntil - t) / dur));
+    if (t >= boss.stateUntil) {
+      boss.pos.y = floorY;
+      boss.state = "stompRecover";
+      boss.stateUntil = t + (boss.phase === 2 ? cfg.phase2RecoveryMs : cfg.stompRecoveryMs) / 1000;
       const until = t + cfg.stompWaveLifeMs / 1000;
       spawnHazard(
         hazards,
@@ -256,17 +267,6 @@ export function stepBoss(
         cfg.stompDamage
       );
       events.push({ kind: "bossAttack", x: boss.pos.x, y: boss.pos.y });
-    }
-    return;
-  }
-
-  if (boss.state === "stompSlam") {
-    const dur = Math.max(1e-6, cfg.stompSlamMs / 1000);
-    boss.pos.y = floorY + lift * (1 - clamp01(1 - (boss.stateUntil - t) / dur));
-    if (t >= boss.stateUntil) {
-      boss.pos.y = floorY;
-      boss.state = "stompRecover";
-      boss.stateUntil = t + (boss.phase === 2 ? cfg.phase2RecoveryMs : cfg.stompRecoveryMs) / 1000;
     }
     return;
   }

@@ -80,19 +80,21 @@ function frame(now: number): void {
   if (sampled.confirm) pending.confirm = true;
 
   game.setInput(pending);
-  const tickBefore = game.state.tick;
-  const phaseBefore = game.state.phase;
-  const alpha = loop.advance(realDt, (dt) => game.step(dt));
+  let edgesConsumed = false;
+  const alpha = loop.advance(realDt, (dt) => {
+    game.step(dt);
+    if (!edgesConsumed) {
+      edgesConsumed = true;
+      pending.jump = false;
+      pending.attack = false;
+      pending.dash = false;
+      pending.pause = false;
+      pending.confirm = false;
+      game.setInput(pending);
+    }
+  });
 
   const state = game.state;
-
-  if (state.tick !== tickBefore || state.phase !== phaseBefore) {
-    pending.jump = false;
-    pending.attack = false;
-    pending.dash = false;
-    pending.pause = false;
-    pending.confirm = false;
-  }
 
   for (const event of state.events) {
     if (event.kind === "roomEnter" || event.kind === "respawn" || event.kind === "start") {

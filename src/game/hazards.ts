@@ -1,10 +1,8 @@
 import type { Hazard, Rect } from "./types";
 
-export const HAZARD_CAPACITY = 16;
-
-export function createHazards(): Hazard[] {
+export function createHazards(capacity: number): Hazard[] {
   const pool: Hazard[] = [];
-  for (let i = 0; i < HAZARD_CAPACITY; i += 1) {
+  for (let i = 0; i < capacity; i += 1) {
     pool.push({
       pos: { x: 0, y: 0 },
       prev: { x: 0, y: 0 },

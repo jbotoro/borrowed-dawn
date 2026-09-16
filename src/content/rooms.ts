@@ -90,7 +90,7 @@ const gallery: Room = {
     {
       rect: { x: 37.8, y: 0, w: 1.6, h: 2.6 },
       to: "belfry",
-      entry: { x: 8.4, y: 0 },
+      entry: { x: 8.3, y: 3.2 },
       entryFacing: 1
     }
   ],
@@ -175,7 +175,9 @@ const belfry: Room = {
     { x: -2, y: -2, w: 40, h: 2 },
     { x: -2, y: 0, w: 2, h: 20 },
     { x: 36, y: 0, w: 2, h: 20 },
-    { x: -2, y: 18, w: 40, h: 2 }
+    { x: -2, y: 18, w: 40, h: 2 },
+    { x: 5.2, y: 2.7, w: 3.6, h: 0.5 },
+    { x: 8.2, y: 0, w: 1.4, h: 1.2 }
   ],
   doors: [
     {
@@ -185,7 +187,7 @@ const belfry: Room = {
       entryFacing: -1
     },
     {
-      rect: { x: 6, y: 0, w: 1.6, h: 2.6 },
+      rect: { x: 6, y: 3.2, w: 1.6, h: 2.6 },
       to: "gallery",
       entry: { x: 37, y: 0 },
       entryFacing: -1
@@ -210,7 +212,8 @@ const belfry: Room = {
     { kind: "block", rect: { x: 14, y: 0, w: 14, h: 0.4 }, z: -2.6 }
   ],
   waypoints: [
-    { x: 8.4, y: 0 },
+    { x: 9.1, y: 1.2 },
+    { x: 11, y: 0 },
     { x: 13, y: 0 },
     { x: 19, y: 0 },
     { x: 26, y: 0 }

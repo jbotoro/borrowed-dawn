@@ -22,7 +22,7 @@ function setup(): {
   return {
     enemies: spawnEnemies(hall, tuning),
     solids,
-    hazards: createHazards(),
+    hazards: createHazards(tuning.world.hazardCapacity),
     events: []
   };
 }
