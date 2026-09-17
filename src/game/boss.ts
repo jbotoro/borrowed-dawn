@@ -1,5 +1,6 @@
 import type { Tuning } from "../tuning";
 import { spawnHazard } from "./hazards";
+import type { Rng } from "./rng";
 import type { Boss, GameEvent, Hazard, PlayerState, Rect, Room } from "./types";
 
 function clamp01(v: number): number {
@@ -20,8 +21,11 @@ export function spawnBoss(room: Room, tuning: Tuning): Boss | null {
     maxHealth: tuning.boss.health,
     phase: 1,
     state: "dormant",
+    stateStart: 0,
     stateUntil: 0,
     nextAttack: "sweep",
+    lastAttack: null,
+    repeatedLastAttack: false,
     arenaMinX: arena.arenaMinX,
     arenaMaxX: arena.arenaMaxX,
     alive: true,
@@ -44,8 +48,11 @@ export function resetBoss(boss: Boss, room: Room, tuning: Tuning): void {
   boss.maxHealth = tuning.boss.health;
   boss.phase = 1;
   boss.state = "dormant";
+  boss.stateStart = 0;
   boss.stateUntil = 0;
   boss.nextAttack = "sweep";
+  boss.lastAttack = null;
+  boss.repeatedLastAttack = false;
   boss.alive = true;
   boss.flash = 0;
 }
@@ -78,9 +85,14 @@ export function bossAttackHitbox(boss: Boss, tuning: Tuning, out: Rect): Rect | 
   return out;
 }
 
+function setState(boss: Boss, state: Boss["state"], t: number, durationMs: number): void {
+  boss.state = state;
+  boss.stateStart = t;
+  boss.stateUntil = t + durationMs / 1000;
+}
+
 function wake(boss: Boss, t: number, tuning: Tuning): void {
-  boss.state = "idle";
-  boss.stateUntil = t + tuning.boss.idleMs / 1000;
+  setState(boss, "idle", t, tuning.boss.idleMs);
   boss.nextAttack = "sweep";
 }
 
@@ -103,30 +115,67 @@ export function hurtBoss(
   if (boss.health <= 0) {
     boss.health = 0;
     boss.alive = false;
-    boss.state = "dead";
-    boss.stateUntil = t;
+    setState(boss, "dead", t, 0);
     events.push({ kind: "bossDeath", x: boss.pos.x, y: boss.pos.y });
     return true;
   }
   return false;
 }
 
-function beginSweep(boss: Boss, t: number, tuning: Tuning, events: GameEvent[]): void {
-  boss.state = "sweepTelegraph";
-  boss.stateUntil = t + tuning.boss.sweepTelegraphMs / 1000;
+function recordAttack(boss: Boss, attack: Boss["nextAttack"]): void {
+  boss.repeatedLastAttack = boss.lastAttack === attack;
+  boss.lastAttack = attack;
+}
+
+function telegraphScale(boss: Boss, tuning: Tuning, rng: Rng): number {
+  const scale = rng.range(tuning.boss.telegraphScaleMin, tuning.boss.telegraphScaleMax);
+  return boss.phase === 2 ? scale * tuning.boss.phase2TelegraphScale : scale;
+}
+
+function beginSweep(boss: Boss, t: number, tuning: Tuning, rng: Rng, events: GameEvent[]): void {
+  recordAttack(boss, "sweep");
+  setState(
+    boss,
+    "sweepTelegraph",
+    t,
+    tuning.boss.sweepTelegraphMs * telegraphScale(boss, tuning, rng)
+  );
   events.push({ kind: "bossTelegraph", x: boss.pos.x, y: boss.pos.y });
 }
 
-function beginStomp(boss: Boss, t: number, tuning: Tuning, events: GameEvent[]): void {
-  boss.state = "stompTelegraph";
-  boss.stateUntil = t + tuning.boss.stompTelegraphMs / 1000;
+function beginStomp(boss: Boss, t: number, tuning: Tuning, rng: Rng, events: GameEvent[]): void {
+  recordAttack(boss, "stomp");
+  setState(
+    boss,
+    "stompTelegraph",
+    t,
+    tuning.boss.stompTelegraphMs * telegraphScale(boss, tuning, rng)
+  );
   events.push({ kind: "bossTelegraph", x: boss.pos.x, y: boss.pos.y });
 }
 
 function goIdle(boss: Boss, t: number, tuning: Tuning, next: "sweep" | "stomp"): void {
-  boss.state = "idle";
-  boss.stateUntil = t + tuning.boss.idleMs / 1000;
+  setState(boss, "idle", t, tuning.boss.idleMs);
   boss.nextAttack = next;
+}
+
+function otherAttack(attack: Boss["nextAttack"]): Boss["nextAttack"] {
+  return attack === "sweep" ? "stomp" : "sweep";
+}
+
+function chooseNextAttack(boss: Boss, tuning: Tuning, rng: Rng): Boss["nextAttack"] {
+  const last = boss.lastAttack;
+  if (last === null) {
+    return "sweep";
+  }
+  if (!boss.repeatedLastAttack && rng.next() < tuning.boss.attackRepeatChance) {
+    return last;
+  }
+  return otherAttack(last);
+}
+
+function phaseTwoOpeningAttack(boss: Boss): Boss["nextAttack"] {
+  return boss.lastAttack === "sweep" && boss.repeatedLastAttack ? "stomp" : "sweep";
 }
 
 export function stepBoss(
@@ -137,6 +186,7 @@ export function stepBoss(
   t: number,
   dt: number,
   tuning: Tuning,
+  rng: Rng,
   events: GameEvent[]
 ): void {
   const cfg = tuning.boss;
@@ -159,8 +209,7 @@ export function stepBoss(
 
   if (boss.phase === 1 && boss.health <= cfg.phase2At * boss.maxHealth) {
     boss.phase = 2;
-    boss.state = "crack";
-    boss.stateUntil = t + cfg.crackMs / 1000;
+    setState(boss, "crack", t, cfg.crackMs);
     boss.pos.y = floorY;
     events.push({ kind: "bossPhase", x: boss.pos.x, y: boss.pos.y });
     return;
@@ -170,7 +219,7 @@ export function stepBoss(
 
   if (boss.state === "crack") {
     if (t >= boss.stateUntil) {
-      goIdle(boss, t, tuning, "sweep");
+      goIdle(boss, t, tuning, phaseTwoOpeningAttack(boss));
     }
     return;
   }
@@ -179,9 +228,9 @@ export function stepBoss(
     boss.facing = towardPlayer;
     if (t >= boss.stateUntil) {
       if (boss.nextAttack === "sweep") {
-        beginSweep(boss, t, tuning, events);
+        beginSweep(boss, t, tuning, rng, events);
       } else {
-        beginStomp(boss, t, tuning, events);
+        beginStomp(boss, t, tuning, rng, events);
       }
     }
     return;
@@ -190,8 +239,7 @@ export function stepBoss(
   if (boss.state === "sweepTelegraph") {
     boss.facing = towardPlayer;
     if (t >= boss.stateUntil) {
-      boss.state = "sweepActive";
-      boss.stateUntil = t + cfg.sweepActiveMs / 1000;
+      setState(boss, "sweepActive", t, cfg.sweepActiveMs);
       events.push({ kind: "bossAttack", x: boss.pos.x, y: boss.pos.y });
     }
     return;
@@ -199,8 +247,7 @@ export function stepBoss(
 
   if (boss.state === "sweepActive") {
     if (t >= boss.stateUntil) {
-      boss.state = "sweepRecover";
-      boss.stateUntil = t + cfg.sweepRecoveryMs / 1000;
+      setState(boss, "sweepRecover", t, cfg.sweepRecoveryMs);
     }
     return;
   }
@@ -208,9 +255,10 @@ export function stepBoss(
   if (boss.state === "sweepRecover") {
     if (t >= boss.stateUntil) {
       if (boss.phase === 2) {
-        beginStomp(boss, t, tuning, events);
+        boss.nextAttack = "stomp";
+        beginStomp(boss, t, tuning, rng, events);
       } else {
-        goIdle(boss, t, tuning, "stomp");
+        goIdle(boss, t, tuning, chooseNextAttack(boss, tuning, rng));
       }
     }
     return;
@@ -219,8 +267,7 @@ export function stepBoss(
   if (boss.state === "stompTelegraph") {
     boss.facing = towardPlayer;
     if (t >= boss.stateUntil) {
-      boss.state = "stompRise";
-      boss.stateUntil = t + cfg.stompRiseMs / 1000;
+      setState(boss, "stompRise", t, cfg.stompRiseMs);
     }
     return;
   }
@@ -232,8 +279,7 @@ export function stepBoss(
     boss.pos.y = floorY + lift * clamp01(1 - (boss.stateUntil - t) / dur);
     if (t >= boss.stateUntil) {
       boss.pos.y = floorY + lift;
-      boss.state = "stompSlam";
-      boss.stateUntil = t + cfg.stompSlamMs / 1000;
+      setState(boss, "stompSlam", t, cfg.stompSlamMs);
     }
     return;
   }
@@ -243,8 +289,12 @@ export function stepBoss(
     boss.pos.y = floorY + lift * (1 - clamp01(1 - (boss.stateUntil - t) / dur));
     if (t >= boss.stateUntil) {
       boss.pos.y = floorY;
-      boss.state = "stompRecover";
-      boss.stateUntil = t + (boss.phase === 2 ? cfg.phase2RecoveryMs : cfg.stompRecoveryMs) / 1000;
+      setState(
+        boss,
+        "stompRecover",
+        t,
+        boss.phase === 2 ? cfg.phase2RecoveryMs : cfg.stompRecoveryMs
+      );
       const until = t + cfg.stompWaveLifeMs / 1000;
       spawnHazard(
         hazards,
@@ -273,7 +323,7 @@ export function stepBoss(
 
   if (boss.state === "stompRecover") {
     if (t >= boss.stateUntil) {
-      goIdle(boss, t, tuning, "sweep");
+      goIdle(boss, t, tuning, chooseNextAttack(boss, tuning, rng));
     }
   }
 }

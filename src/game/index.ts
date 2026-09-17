@@ -3,6 +3,7 @@ import { spawnEnemies, stepEnemies } from "./enemies";
 import { clearHazards, createHazards, stepHazards } from "./hazards";
 import { createPlayer, placePlayer, resetPlayer, stepPlayer } from "./player";
 import { createProgress, deathDelayElapsed, onDeath } from "./progress";
+import { createRng } from "./rng";
 import {
   activeSolids,
   checkDoors,
@@ -55,6 +56,7 @@ function defaultStartPos(room: Room): Vec2 {
 
 export function createGame(deps: GameDeps): Game {
   const tuning = deps.tuning;
+  const rng = createRng(deps.seed);
   const rooms = deps.rooms;
   const firstRoom = rooms[0] ?? emptyRoom;
   const startRoomId = deps.startRoom ?? firstRoom.id;
@@ -142,6 +144,24 @@ export function createGame(deps: GameDeps): Game {
     state.events.push({ kind: "start", x: startPos.x, y: startPos.y });
   }
 
+  function returnToTitle(): void {
+    state.phase = "title";
+    state.time = 0;
+    state.tick = 0;
+    state.deathAt = 0;
+    state.victoryAt = 0;
+    state.transition = null;
+    breakableHp.clear();
+    resetPlayer(player, startPos, 1, tuning);
+    player.longwick = false;
+    state.progress = createProgress(startRoom.id, startPos);
+    enterRoom(startRoom.id, startPos, 1, true);
+    state.progress.checkpointRoom = room.id;
+    state.progress.checkpoint.x = startPos.x;
+    state.progress.checkpoint.y = startPos.y;
+    touchingCheckpoint = true;
+  }
+
   function respawn(): void {
     state.progress.deaths += 1;
     const point = state.progress.checkpoint;
@@ -182,6 +202,13 @@ export function createGame(deps: GameDeps): Game {
       return;
     }
     if (state.phase === "victory") {
+      state.time += dt;
+      if (
+        input.confirm &&
+        state.time - state.victoryAt >= tuning.feel.victoryHoldMs / 1000
+      ) {
+        returnToTitle();
+      }
       return;
     }
     if (state.phase === "dead") {
@@ -207,7 +234,7 @@ export function createGame(deps: GameDeps): Game {
     stepPlayer(player, input, solids, t, dt, tuning, state.events);
     stepEnemies(state.enemies, player, solids, hazards, t, dt, tuning);
     if (state.boss) {
-      stepBoss(state.boss, player, room, hazards, t, dt, tuning, state.events);
+      stepBoss(state.boss, player, room, hazards, t, dt, tuning, rng, state.events);
     }
     stepHazards(hazards, room.bounds, t, dt);
     resolveCombat(state, room, breakableHp, t, tuning, state.events);
@@ -248,6 +275,7 @@ export function createGame(deps: GameDeps): Game {
     step,
     start,
     respawn,
+    returnToTitle,
     pause,
     resume,
     currentRoom(): Room {

@@ -93,8 +93,11 @@ export interface Boss {
   maxHealth: number;
   phase: 1 | 2;
   state: BossState;
+  stateStart: number;
   stateUntil: number;
   nextAttack: "sweep" | "stomp";
+  lastAttack: "sweep" | "stomp" | null;
+  repeatedLastAttack: boolean;
   arenaMinX: number;
   arenaMaxX: number;
   alive: boolean;
@@ -315,6 +318,7 @@ export interface Game {
   step(dt: number): void;
   start(): void;
   respawn(): void;
+  returnToTitle(): void;
   pause(): void;
   resume(): void;
   currentRoom(): Room;

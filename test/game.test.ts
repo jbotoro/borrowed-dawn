@@ -103,6 +103,57 @@ describe("game lifecycle", () => {
     expect(game.state.phase).toBe("victory");
     expect(hasEvent(game.state.events, "victory")).toBe(true);
   });
+
+  it("returns to the title after the victory hold, then starts a fresh run", () => {
+    const game = createGame({ tuning, seed: 5, rooms: makeRooms() });
+    game.setInput(emptyInput());
+    game.start();
+    game.state.player.pos.x = 43;
+    game.step(DT);
+    game.step(DT);
+    const boss = game.state.boss;
+    if (boss) {
+      hurtBoss(boss, boss.maxHealth, game.state.time, tuning, game.state.events);
+    }
+    game.state.player.pos.x = 3;
+    game.step(DT);
+    game.state.player.pos.x = 22;
+    game.state.player.pos.y = 1;
+    for (let i = 0; i < 10 && game.state.phase === "playing"; i += 1) {
+      game.step(DT);
+    }
+    expect(game.state.phase).toBe("victory");
+    expect(game.state.progress.bossDefeated).toBe(true);
+
+    const confirm = emptyInput();
+    confirm.confirm = true;
+    game.setInput(confirm);
+    game.step(DT);
+    expect(game.state.phase).toBe("victory");
+
+    game.setInput(emptyInput());
+    const hold = tuning.feel.victoryHoldMs / 1000;
+    while (game.state.time - game.state.victoryAt < hold) {
+      game.step(DT);
+    }
+    expect(game.state.phase).toBe("victory");
+
+    game.setInput(confirm);
+    game.step(DT);
+    expect(game.state.phase).toBe("title");
+    expect(game.state.roomId).toBe("hall");
+    expect(game.state.progress.bossDefeated).toBe(false);
+    expect(game.state.progress.collected.length).toBe(0);
+    expect(game.state.player.longwick).toBe(false);
+    expect(game.state.time).toBe(0);
+
+    game.state.events.length = 0;
+    game.setInput(confirm);
+    game.step(DT);
+    expect(game.state.phase).toBe("playing");
+    expect(game.state.roomId).toBe("hall");
+    expect(hasEvent(game.state.events, "start")).toBe(true);
+  });
 });
 
 describe("full loop", () => {
