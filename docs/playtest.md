@@ -57,9 +57,9 @@ but we clearly need (if we havent already accounted and planned for this) to ref
 beat the boss and the "the bell falls silent. the furnace stays warm" text shows but nothing happens after, intended?
 ## Gate 4: final (Thursday 20:00)
 
-- [ ] Deployed build passes everything above on the presentation machine and one other desktop
-- [ ] Tester completes three runs without coaching
-- [ ] QR opens the intended build; backup recording plays with sound
+- [] Deployed build passes everything above on the presentation machine and one other desktop
+- [] Tester completes three runs without coaching
+- [] QR opens the intended build; backup recording plays with sound
 
 ## Session log
 
@@ -84,14 +84,16 @@ Tuning JSON if changed: <paste>
 
 Agents cannot hear. Play with sound on (any key or click unlocks audio; M mutes; `?mute=1` starts muted) and tick or note:
 
-- [ ] The shrine bed (Landing, Gallery, Cache) reads as "work beginning under pressure": low struck metal, slow pulse, warm sustained tones, not noise
-- [ ] Entering the Belfry is felt as a shift (furnace drone, slow bell toll), not just louder
-- [ ] The first boss telegraph raises intensity noticeably; the phase change is audible
-- [ ] Sweep and stomp warnings cut through the music and sound different from each other
-- [ ] Jump, land, attack swing, hit, dash, hurt, death, respawn, checkpoint, pickup each sound like their material (hollow metal, brass, glass, steam)
-- [ ] Death ducks the music and it returns; pause quiets it and resume restores it
-- [ ] Relative levels sit right; if not, the `audio` group in the tuning panel has master, music, sfx
-- [ ] Nothing loops audibly or clicks
+- [x] The shrine bed (Landing, Gallery, Cache) reads as "work beginning under pressure": low struck metal, slow pulse, warm sustained tones, not noise
+- [x] Entering the Belfry is felt as a shift (furnace drone, slow bell toll), not just louder
+the bell toll is there but its so spaced out, maybe a good thing but something to note
+- [x] The first boss telegraph raises intensity noticeably; the phase change is audible
+I didnt really notice a music shift during the boss fight, we should probably have boss music, there are sfx for his windups
+- [x] Sweep and stomp warnings cut through the music and sound different from each other
+- [x] Jump, land, attack swing, hit, dash, hurt, death, respawn, checkpoint, pickup each sound like their material (hollow metal, brass, glass, steam)
+- [x] Death ducks the music and it returns; pause quiets it and resume restores it
+- [x] Relative levels sit right; if not, the `audio` group in the tuning panel has master, music, sfx
+- [x] Nothing loops audibly or clicks
 
 Notes:
 
