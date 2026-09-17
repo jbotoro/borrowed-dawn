@@ -1,0 +1,5 @@
+{
+  "README": "Optional file overrides for the procedural audio. Drop audio files (ogg/mp3/wav) into public/audio/ and map them here; every entry left empty keeps the built-in WebAudio synthesis. Keys under \"music\" are bed ids: \"cinder\" (shrine rooms) and \"bellkeeper\" (boss chamber); they loop and crossfade over tuning.audio.crossfadeMs. Keys under \"sfx\" are event names: start, jump, land, attackSwing, attackHit, dash, hurt, death, respawn, enemyHurt, enemyDeath, pickup, dawnCore, gateOpen, breakableBroken, checkpoint, bossTelegraphSweep, bossTelegraphStomp, bossAttack, bossHurt, bossPhase, bossDeath, victory, pause, resume; they play as one-shots. Each value is a path relative to public/audio/, for example \"cinder-loop.ogg\" or \"sfx/dash.mp3\". Record every file's source and license in LICENSES.md.",
+  "music": {},
+  "sfx": {}
+}
