@@ -1,14 +1,21 @@
 import * as THREE from "three";
 import type { Tuning } from "../tuning";
 import type { Decor, DecorKind, Door, Progress, Rect, Room, Vec2 } from "../game/types";
-import type { LookProfile } from "./look";
+import type { LitMaterial, LookProfile } from "./look";
 import { shadeOf } from "./look";
 
 export interface RoomMesh {
   group: THREE.Group;
   build(room: Room, progress: Progress): void;
   syncGates(progress: Progress): void;
-  sync(t: number, dt: number, tuning: Tuning): void;
+  sync(
+    t: number,
+    dt: number,
+    tuning: Tuning,
+    furnaceBoost: number,
+    emberBoost: number,
+    doorGlow: number
+  ): void;
   dispose(): void;
 }
 
@@ -31,6 +38,7 @@ interface Flame {
   lightBase: number;
   phase: number;
   amount: number;
+  furnace: boolean;
 }
 
 interface SwayEntry {
@@ -46,6 +54,28 @@ interface EmberField {
   minY: Float32Array;
   spanY: Float32Array;
   count: number;
+  base: number;
+  drawn: number;
+}
+
+interface DoorGlow {
+  material: THREE.MeshBasicMaterial;
+  opacity: number;
+  mesh: THREE.Object3D;
+  scaleX: number;
+  scaleY: number;
+}
+
+interface DoorLight {
+  light: THREE.PointLight;
+  intensity: number;
+}
+
+interface DoorPlate {
+  material: LitMaterial;
+  color: THREE.Color;
+  emissive: THREE.Color;
+  lift: number;
 }
 
 interface Opening {
@@ -246,6 +276,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   let decorLights = 0;
   let currentOpenings: Opening[] = [];
   let currentRoom: Room | null = null;
+  let sealedOpenings = new Set<Opening>();
+  const doorGlows: DoorGlow[] = [];
+  const doorLights: DoorLight[] = [];
+  const doorPlates: DoorPlate[] = [];
+  const dawnColor = new THREE.Color(ramp.amber);
   let outlineGeometryCache = new Map<string, THREE.BufferGeometry>();
   let boxGeometryCache = new Map<string, THREE.BufferGeometry>();
 
@@ -495,6 +530,10 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     sways.length = 0;
     embers = null;
     decorLights = 0;
+    doorGlows.length = 0;
+    doorLights.length = 0;
+    doorPlates.length = 0;
+    sealedOpenings = new Set();
   }
 
   function syncGates(progress: Progress): void {
@@ -557,7 +596,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     dir: number,
     hex: number,
     opacity: number
-  ): void {
+  ): THREE.Mesh {
     const geometry = track(new THREE.PlaneGeometry(length, width, 12, 2));
     paintPlane(
       geometry,
@@ -573,6 +612,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     mesh.rotation.x = -Math.PI * 0.5;
     mesh.position.set(x + (dir * length) * 0.5, floorY + 0.012, 0.15);
     group.add(mesh);
+    return mesh;
   }
 
   function addPoolSpill(x: number, floorY: number, radius: number, hex: number, opacity: number): void {
@@ -593,13 +633,40 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     z: number,
     hex: number,
     opacity: number
-  ): void {
+  ): THREE.Mesh {
     const geometry = track(new THREE.CircleGeometry(1, 24));
     radialFalloff(geometry);
     const mesh = new THREE.Mesh(geometry, spillMaterial(hex, opacity));
     mesh.scale.set(w * 0.5, h * 0.5, 1);
     mesh.position.set(x, y, z);
     group.add(mesh);
+    return mesh;
+  }
+
+  function registerDoorGlow(mesh: THREE.Mesh): void {
+    const material = mesh.material as THREE.MeshBasicMaterial;
+    doorGlows.push({
+      material,
+      opacity: material.opacity,
+      mesh,
+      scaleX: mesh.scale.x,
+      scaleY: mesh.scale.y
+    });
+  }
+
+  function registerDoorLight(light: THREE.PointLight | null): void {
+    if (light === null) return;
+    doorLights.push({ light, intensity: light.intensity });
+  }
+
+  function registerDoorPlate(material: LitMaterial, lift: number): LitMaterial {
+    doorPlates.push({
+      material,
+      color: material.color.clone(),
+      emissive: material.emissive.clone(),
+      lift
+    });
+    return material;
   }
 
   function addArchStones(
@@ -991,7 +1058,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const light = addFlameLight(ramp.amber, feel.lampLightIntensity, feel.lampLightDistance, lampX, ly, z + 0.9);
     addPoolSpill(lampX, rect.y, 2.4, ramp.amber, feel.passageSpillOpacity * 0.8);
     addWallGlow(lampX, ly - 0.3, 3.0, 3.6, z - 0.35, ramp.amber, feel.passageSpillOpacity * 0.22);
-    flames.push({ material: glass, base: new THREE.Color(ramp.amber), light, lightBase: feel.lampLightIntensity, phase: lampX, amount: 0.12 });
+    flames.push({ material: glass, base: new THREE.Color(ramp.amber), light, lightBase: feel.lampLightIntensity, phase: lampX, amount: 0.12, furnace: false });
   }
 
   function addPipe(decor: Decor, feel: Feel): void {
@@ -1209,7 +1276,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     addRivets(cx, mouthY, mouthW + 0.3, mouthH + 0.26, front + 0.1, group, ironMat);
     const light = addFlameLight(ramp.amber, feel.furnaceLightIntensity * strength, feel.furnaceLightDistance, cx, mouthY, front + 0.8);
     addWallGlow(cx, mouthY, rect.w * 2.4, rect.h * 1.6, front + 0.12, ramp.amber, feel.decorGlowOpacity * 0.6 * strength);
-    flames.push({ material: mouthMat, base: new THREE.Color(ramp.amber), light, lightBase: feel.furnaceLightIntensity * strength, phase: cx * 0.6, amount: feel.furnacePulseAmount });
+    flames.push({ material: mouthMat, base: new THREE.Color(ramp.amber), light, lightBase: feel.furnaceLightIntensity * strength, phase: cx * 0.6, amount: feel.furnacePulseAmount, furnace: true });
   }
 
   function addShaft(decor: Decor, feel: Feel): void {
@@ -1369,8 +1436,10 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       const area = Math.max(decor.rect.w * decor.rect.h, 0);
       total += Math.round(area * feel.emberPerArea * density);
     }
-    const count = Math.min(Math.max(total, 0), Math.max(1, Math.round(feel.emberMax)));
-    if (count <= 0) return;
+    const base = Math.min(Math.max(total, 0), Math.max(1, Math.round(feel.emberMax)));
+    if (base <= 0) return;
+    const headroom = Math.max(feel.dawnEmberBoost, 1);
+    const count = Math.max(base, Math.round(base * headroom));
 
     const geometry = track(new THREE.BufferGeometry());
     const attribute = new THREE.BufferAttribute(new Float32Array(count * 3), 3);
@@ -1387,7 +1456,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     for (const decor of rects) {
       const area = Math.max(decor.rect.w * decor.rect.h, 0);
       let share = Math.round(area * feel.emberPerArea * density);
-      if (total > count) share = Math.round((share * count) / total);
+      if (total > 0) share = Math.round((share * count) / total);
       for (let i = 0; i < share && index < count; i++) {
         const x = decor.rect.x + Math.random() * decor.rect.w;
         const y = decor.rect.y + Math.random() * decor.rect.h;
@@ -1415,10 +1484,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     }
 
     attribute.needsUpdate = true;
+    geometry.setDrawRange(0, base);
     const points = new THREE.Points(geometry, emberMat);
     points.frustumCulled = false;
     group.add(points);
-    embers = { points, attribute, seed, originX, minY, spanY, count };
+    embers = { points, attribute, seed, originX, minY, spanY, count, base, drawn: base };
   }
 
   function addFallbackPlatform(rect: Rect, feel: Feel): void {
@@ -1619,10 +1689,16 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       addBox(rect.w + jambW * 2.2, 0.22, depth + 0.1, cx, rect.y + rect.h + 0.73, 0, stoneDarkMat, group, true);
     }
 
-    addFloorSpill(innerX, rect.y, Math.min(rect.w * 2.1, depth - 0.1), feel.passageSpillLength, -dir, glowHex, feel.passageSpillOpacity * 0.9);
-    addWallGlow(cx - dir * 0.2, cy, rect.w * 1.6, rect.h * 1.15, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * (opening.warm ? 0.9 : 0.6));
+    const spill = addFloorSpill(innerX, rect.y, Math.min(rect.w * 2.1, depth - 0.1), feel.passageSpillLength, -dir, glowHex, feel.passageSpillOpacity * 0.9);
+    const wallGlow = addWallGlow(cx - dir * 0.2, cy, rect.w * 1.6, rect.h * 1.15, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * (opening.warm ? 0.9 : 0.6));
+    let passageLight: THREE.PointLight | null = null;
     if (feel.passageLightIntensity > 0 && opening.warm) {
-      addFlameLight(hex, feel.passageLightIntensity, feel.passageLightDistance, innerX - dir * 0.2, cy, 0.4);
+      passageLight = addFlameLight(hex, feel.passageLightIntensity, feel.passageLightDistance, innerX - dir * 0.2, cy, 0.4);
+    }
+    if (sealedOpenings.has(opening)) {
+      registerDoorGlow(spill);
+      registerDoorGlow(wallGlow);
+      registerDoorLight(passageLight);
     }
   }
 
@@ -1813,6 +1889,10 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     holder.position.set(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5, 0);
     group.add(holder);
     const depth = Math.max(feel.gateDepth, 0.3);
+    const plateDarkMat = warm
+      ? registerDoorPlate(transient(look.litMaterial("chain", { shade: 0.62 })), 0.4)
+      : ironDarkMat;
+    const plateMat = warm ? registerDoorPlate(transient(look.litMaterial("chain")), 1) : ironMat;
     if (warm) {
       const glowGeometry = track(new THREE.CircleGeometry(1, 24));
       radialFalloff(glowGeometry);
@@ -1820,31 +1900,33 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       glow.scale.set(rect.w * 1.4, rect.h * 0.62, 1);
       glow.position.set(0, -rect.h * 0.08, -depth * 0.5 - 0.12);
       holder.add(glow);
+      registerDoorGlow(glow);
       const floorGlow = new THREE.Mesh(glowGeometry, spillMaterial(ramp.amber, feel.passageSpillOpacity * 0.7));
       floorGlow.rotation.x = -Math.PI * 0.5;
       floorGlow.scale.set(rect.w * 2.6, feel.solidDepth * 0.42, 1);
       floorGlow.position.set(-rect.w * 1.6, -rect.h * 0.5 + 0.012, 0);
       holder.add(floorGlow);
+      registerDoorGlow(floorGlow);
     }
     const frameW = Math.max(rect.w, 0.3);
     const frameT = 0.14;
-    addBox(frameW, frameT, depth, 0, rect.h * 0.5 - frameT * 0.5, 0, ironDarkMat, holder, true);
-    addBox(frameW, frameT, depth, 0, -rect.h * 0.5 + frameT * 0.5, 0, ironDarkMat, holder, true);
-    addBox(frameT, rect.h, depth, -frameW * 0.5 + frameT * 0.5, 0, 0, ironDarkMat, holder, true);
-    addBox(frameT, rect.h, depth, frameW * 0.5 - frameT * 0.5, 0, 0, ironDarkMat, holder, true);
+    addBox(frameW, frameT, depth, 0, rect.h * 0.5 - frameT * 0.5, 0, plateDarkMat, holder, true);
+    addBox(frameW, frameT, depth, 0, -rect.h * 0.5 + frameT * 0.5, 0, plateDarkMat, holder, true);
+    addBox(frameT, rect.h, depth, -frameW * 0.5 + frameT * 0.5, 0, 0, plateDarkMat, holder, true);
+    addBox(frameT, rect.h, depth, frameW * 0.5 - frameT * 0.5, 0, 0, plateDarkMat, holder, true);
     const bars = Math.max(3, Math.round(depth / 0.28));
     for (let i = 0; i < bars; i++) {
       const bz = -depth * 0.5 + ((i + 0.5) / bars) * depth;
-      addBox(frameW * 0.86, 0.09, 0.09, 0, 0, bz, ironMat, holder, true);
-      addBox(0.09, rect.h - frameT * 2, 0.09, 0, 0, bz, ironMat, holder, true);
+      addBox(frameW * 0.86, 0.09, 0.09, 0, 0, bz, plateMat, holder, true);
+      addBox(0.09, rect.h - frameT * 2, 0.09, 0, 0, bz, plateMat, holder, true);
     }
-    addBox(frameW * 0.92, 0.12, depth * 1.04, 0, rect.h * 0.22, 0, ironDarkMat, holder, true);
-    addBox(frameW * 0.92, 0.12, depth * 1.04, 0, -rect.h * 0.22, 0, ironDarkMat, holder, true);
-    const plate = addBox(frameW * 0.9, 0.5, 0.16, 0, -rect.h * 0.02, depth * 0.5 + 0.06, ironMat, holder, true);
+    addBox(frameW * 0.92, 0.12, depth * 1.04, 0, rect.h * 0.22, 0, plateDarkMat, holder, true);
+    addBox(frameW * 0.92, 0.12, depth * 1.04, 0, -rect.h * 0.22, 0, plateDarkMat, holder, true);
+    const plate = addBox(frameW * 0.9, 0.5, 0.16, 0, -rect.h * 0.02, depth * 0.5 + 0.06, plateMat, holder, true);
     plate.renderOrder = 1;
     addBox(0.08, 0.14, 0.06, 0, -rect.h * 0.02 - 0.02, depth * 0.5 + 0.16, voidMat, holder);
     addBox(0.14, 0.06, 0.06, 0, -rect.h * 0.02 + 0.06, depth * 0.5 + 0.16, voidMat, holder);
-    addRivets(0, -rect.h * 0.02, frameW * 0.86, 0.46, depth * 0.5 + 0.16, holder, ironDarkMat);
+    addRivets(0, -rect.h * 0.02, frameW * 0.86, 0.46, depth * 0.5 + 0.16, holder, plateDarkMat);
     return holder;
   }
 
@@ -1910,6 +1992,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       currentOpenings = openings;
       currentRoom = room;
 
+      for (const gate of room.gates) {
+        const beyond = openings.find((o) => rectsTouch(o.rect, gate.rect, 1.4));
+        if (beyond !== undefined && beyond.warm) sealedOpenings.add(beyond);
+      }
+
       const claimed = new Set<Rect>();
       const assignments = new Map<Decor, Rect[]>();
       for (const decor of room.decor) {
@@ -1960,13 +2047,38 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
 
     syncGates,
 
-    sync(t: number, dt: number, live: Tuning): void {
+    sync(
+      t: number,
+      dt: number,
+      live: Tuning,
+      furnaceBoost: number,
+      emberBoost: number,
+      doorGlow: number
+    ): void {
       const feel = live.feel;
+      const dawnSpan = Math.max(feel.dawnDoorGlow - 1, 0.001);
+      const dawnAmount = Math.min(Math.max((doorGlow - 1) / dawnSpan, 0), 1);
+
+      for (const entry of doorGlows) {
+        entry.material.opacity = Math.min(entry.opacity * doorGlow, 1);
+        entry.mesh.scale.x = entry.scaleX * (1 + 0.35 * dawnAmount);
+        entry.mesh.scale.y = entry.scaleY * (1 + 0.35 * dawnAmount);
+      }
+      for (const entry of doorLights) {
+        entry.light.intensity = entry.intensity * doorGlow;
+      }
+      for (const entry of doorPlates) {
+        const lift = dawnAmount * entry.lift;
+        entry.material.color.copy(entry.color).lerp(dawnColor, lift * 0.72);
+        entry.material.emissive.copy(entry.emissive).lerp(dawnColor, lift);
+        entry.material.emissiveIntensity = lift * 0.9;
+      }
       const flicker =
         1 + (Math.sin(t * feel.flickerSpeed) * 0.6 + Math.sin(t * feel.flickerSpeed * 2.37) * 0.4) * feel.flickerAmount;
 
       for (const entry of flames) {
-        const pulse = 1 + Math.sin(t * feel.furnacePulseSpeed + entry.phase) * entry.amount;
+        const boost = entry.furnace ? furnaceBoost : 1;
+        const pulse = (1 + Math.sin(t * feel.furnacePulseSpeed + entry.phase) * entry.amount) * boost;
         const value = Math.min(pulse * flicker, 1.25);
         entry.material.color.copy(entry.base).multiplyScalar(value);
         if (entry.light !== null) entry.light.intensity = entry.lightBase * pulse * flicker;
@@ -1981,6 +2093,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       if (field !== null) {
         emberMat.size = feel.emberSize;
         emberMat.opacity = feel.emberOpacity;
+        const wanted = Math.min(field.count, Math.max(1, Math.round(field.base * emberBoost)));
+        if (wanted !== field.drawn) {
+          field.drawn = wanted;
+          field.points.geometry.setDrawRange(0, wanted);
+        }
         const array = field.attribute.array as Float32Array;
         const rise = feel.emberRiseSpeed;
         const amp = feel.emberSwayAmp;

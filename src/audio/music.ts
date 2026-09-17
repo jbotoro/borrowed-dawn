@@ -1,7 +1,7 @@
 import type { Synth } from "./synth";
 import { lfo, metal, noiseBurst, stopSource, tone } from "./synth";
 
-export type BedId = "cinder" | "bellkeeper";
+export type BedId = "cinder" | "bellkeeper" | "dawn";
 
 export interface Bed {
   readonly id: BedId;
@@ -26,6 +26,16 @@ const CHORDS: number[][] = [
   [110.0, 130.81, 164.81]
 ];
 
+const DAWN_CHORDS: number[][] = [
+  [146.83, 220.0, 293.66],
+  [164.81, 246.94, 329.63],
+  [130.81, 196.0, 261.63],
+  [174.61, 261.63, 349.23]
+];
+
+const DAWN_RISE = [146.83, 174.61, 220.0, 261.63, 329.63, 391.99];
+const DAWN_CUTOFF_SCALE = 1.9;
+
 const STRIKE_ROOT = 73.42;
 const STRIKE_RATIOS = [1, 2.0, 3.01, 4.72];
 const TOLL_RATIOS = [1, 2.0, 2.76, 5.4, 8.9];
@@ -48,6 +58,8 @@ function pickNumber(table: number[], index: number, fallback: number): number {
 
 export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
   const ctx = synth.ctx;
+  const dawn = id === "dawn";
+  const baseCutoff = dawn ? ORGAN_CUTOFF * DAWN_CUTOFF_SCALE : ORGAN_CUTOFF;
 
   const output = ctx.createGain();
   output.gain.value = 0.0001;
@@ -60,11 +72,11 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
   const organFilter = ctx.createBiquadFilter();
   organFilter.type = "lowpass";
   organFilter.Q.value = 0.7;
-  organFilter.frequency.value = ORGAN_CUTOFF;
+  organFilter.frequency.value = baseCutoff;
   organFilter.connect(output);
 
   const organBus = ctx.createGain();
-  organBus.gain.value = 0.55;
+  organBus.gain.value = dawn ? 0.7 : 0.55;
   organBus.connect(organFilter);
 
   const tollBus = ctx.createGain();
@@ -101,13 +113,13 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
   }
 
   function organ(at: number, index: number): void {
-    const chord = pick(CHORDS, index);
+    const chord = pick(dawn ? DAWN_CHORDS : CHORDS, index);
     let voice = 0;
     for (const freq of chord) {
       tone(synth, organBus, at, {
         type: "sine",
         freq,
-        gain: 0.085,
+        gain: dawn ? 0.075 : 0.085,
         attack: ORGAN_SWELL,
         hold: ORGAN_HOLD,
         decay: ORGAN_RELEASE,
@@ -117,7 +129,7 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
         type: "triangle",
         freq: freq * 2,
         detune: voice === 0 ? -5 : 4,
-        gain: 0.026,
+        gain: dawn ? 0.042 : 0.026,
         attack: ORGAN_SWELL + 0.6,
         hold: ORGAN_HOLD,
         decay: ORGAN_RELEASE,
@@ -135,6 +147,33 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
         });
       }
       voice += 1;
+    }
+  }
+
+  function rise(at: number, index: number): void {
+    const steps = 3;
+    const offset = (index % 3) * 1;
+    for (let i = 0; i < steps; i++) {
+      const freq = pickNumber(DAWN_RISE, offset + i, 220);
+      const when = at + i * BEAT * 1.5;
+      tone(synth, organBus, when, {
+        type: "triangle",
+        freq,
+        gain: 0.05,
+        attack: 0.3,
+        hold: 0.55,
+        decay: 1.5,
+        curve: "linear"
+      });
+      tone(synth, organBus, when, {
+        type: "sine",
+        freq: freq * 2,
+        gain: 0.022,
+        attack: 0.22,
+        hold: 0.4,
+        decay: 1.2,
+        curve: "linear"
+      });
     }
   }
 
@@ -159,10 +198,10 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
     const source = synth.noiseSource();
     const band = ctx.createBiquadFilter();
     band.type = "bandpass";
-    band.frequency.value = 380;
+    band.frequency.value = dawn ? 760 : 380;
     band.Q.value = 0.9;
     const level = ctx.createGain();
-    level.gain.value = 0.05;
+    level.gain.value = dawn ? 0.035 : 0.05;
     source.connect(band);
     band.connect(level);
     level.connect(output);
@@ -232,7 +271,12 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
       const at = nextStep;
       const step = stepIndex % STEPS_PER_BAR;
       const bar = Math.floor(stepIndex / STEPS_PER_BAR);
-      if (step === 0) {
+      if (dawn) {
+        if (step === 0) {
+          if (bar % 2 === 0) organ(at, bar / 2);
+          else rise(at, (bar - 1) / 2);
+        }
+      } else if (step === 0) {
         strike(at, 0.5);
         if (bar % 2 === 0) organ(at, bar / 2);
         if (id === "bellkeeper" && bar % (phase2 ? 2 : 4) === 0) toll(at, bar / 2);
@@ -277,7 +321,7 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
       intensity = value;
       organFilter.frequency.cancelScheduledValues(at);
       organFilter.frequency.setValueAtTime(organFilter.frequency.value, at);
-      organFilter.frequency.linearRampToValueAtTime(ORGAN_CUTOFF * value, at + 2.5);
+      organFilter.frequency.linearRampToValueAtTime(baseCutoff * value, at + 2.5);
       pulseBus.gain.cancelScheduledValues(at);
       pulseBus.gain.setValueAtTime(pulseBus.gain.value, at);
       pulseBus.gain.linearRampToValueAtTime(value, at + 2.5);

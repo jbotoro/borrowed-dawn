@@ -176,6 +176,11 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
   const rigKey = new THREE.Color(rig.key.color);
   const rigFill = new THREE.Color(rig.fill.color);
 
+  const rewardColor = new THREE.Color(look.colorOf("reward"));
+  let furnaceBoost = 1;
+  let emberBoost = 1;
+  let doorGlow = 1;
+
   const targetFog = new THREE.Color(baseBackground);
   const targetSky = new THREE.Color(rig.hemiSky);
   const targetGround = new THREE.Color(rig.hemiGround);
@@ -188,7 +193,23 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
   let targetKeyI = tuning.feel.keyIntensity;
   let targetFillI = tuning.feel.fillIntensity;
 
-  function resolveTargets(live: Tuning): void {
+  function applyDawnTargets(live: Tuning): void {
+    const warmth = Math.max(0, Math.min(1, live.feel.dawnWarmth));
+    targetKey.lerp(rewardColor, warmth);
+    targetFill.lerp(rewardColor, warmth);
+    targetHemi *= live.feel.dawnLightBoost;
+    targetKeyI *= live.feel.dawnLightBoost;
+  }
+
+  function applyVictoryTargets(live: Tuning): void {
+    const warmth = Math.max(0, Math.min(1, live.feel.victoryWarmth));
+    targetKey.lerp(rewardColor, warmth);
+    targetFill.lerp(rewardColor, warmth);
+    targetHemi *= live.feel.victoryLightBoost;
+    targetKeyI *= live.feel.victoryLightBoost;
+  }
+
+  function resolveTargets(live: Tuning, victory: boolean, dawn: boolean): void {
     const amb = ambience;
     const sat = look.ambienceSaturation;
     if (amb === null) {
@@ -202,6 +223,8 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
       targetHemi = live.feel.hemiIntensity * rig.hemiIntensity;
       targetKeyI = live.feel.keyIntensity * rig.key.intensity;
       targetFillI = live.feel.fillIntensity * rig.fill.intensity;
+      if (dawn) applyDawnTargets(live);
+      if (victory) applyVictoryTargets(live);
       return;
     }
     const fogHex =
@@ -220,10 +243,12 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
     targetHemi = amb.hemiIntensity * gain * rig.hemiIntensity;
     targetKeyI = amb.keyIntensity * gain * rig.key.intensity;
     targetFillI = amb.fillIntensity * gain * rig.fill.intensity;
+    if (dawn) applyDawnTargets(live);
+    if (victory) applyVictoryTargets(live);
   }
 
-  function applyAmbience(dt: number, live: Tuning): void {
-    resolveTargets(live);
+  function applyAmbience(dt: number, live: Tuning, victory: boolean, dawn: boolean): void {
+    resolveTargets(live, victory, dawn);
     const rate = firstApply
       ? 1
       : Math.min(1, Math.max(live.feel.ambienceLerpPerSec, 0) * Math.max(dt, 0));
@@ -241,6 +266,15 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
     hemi.intensity += (targetHemi - hemi.intensity) * rate;
     key.intensity += (targetKeyI - key.intensity) * rate;
     fill.intensity += (targetFillI - fill.intensity) * rate;
+
+    const targetBoost = victory ? live.feel.victoryFurnaceBoost : 1;
+    furnaceBoost += (targetBoost - furnaceBoost) * rate;
+
+    const targetEmber = dawn ? Math.max(live.feel.dawnEmberBoost, 1) : 1;
+    emberBoost += (targetEmber - emberBoost) * rate;
+
+    const targetDoor = dawn ? Math.max(live.feel.dawnDoorGlow, 1) : 1;
+    doorGlow += (targetDoor - doorGlow) * rate;
   }
 
   function resize(): void {
@@ -272,10 +306,11 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
       renderTime: number,
       live: Tuning
     ): void {
-      applyAmbience(dt, live);
+      const dawn = state.progress.bossDefeated && state.phase !== "title";
+      applyAmbience(dt, live, state.phase === "victory", dawn);
 
       room.syncGates(state.progress);
-      room.sync(renderTime, dt, live);
+      room.sync(renderTime, dt, live, furnaceBoost, emberBoost, doorGlow);
       const shown = posedForTitle(state, currentRoom);
       player.sync(shown, alpha, simTime, renderTime, live);
       enemies.sync(state.enemies, alpha, simTime, live);

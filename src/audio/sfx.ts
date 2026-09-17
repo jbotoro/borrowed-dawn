@@ -24,6 +24,7 @@ export type SfxKey =
   | "bossHurt"
   | "bossPhase"
   | "bossDeath"
+  | "victorySting"
   | "victory"
   | "pause"
   | "resume";
@@ -51,6 +52,7 @@ export const SFX_KEYS: SfxKey[] = [
   "bossHurt",
   "bossPhase",
   "bossDeath",
+  "victorySting",
   "victory",
   "pause",
   "resume"
@@ -597,6 +599,31 @@ function bossDeath(synth: Synth, dest: AudioNode, at: number): void {
   }
 }
 
+function victorySting(synth: Synth, dest: AudioNode, at: number): void {
+  const figure = [220.0, 293.66, 369.99];
+  let index = 0;
+  for (const freq of figure) {
+    const when = at + 0.18 + index * 0.24;
+    metal(synth, dest, when, freq, [1, 2.0, 2.76, 5.4], {
+      gain: 0.16 + index * 0.03,
+      decay: 2.2 + index * 0.6,
+      falloff: 0.62,
+      spread: 0.14,
+      filter: { type: "lowpass", freq: 3200, q: 0.6 }
+    });
+    tone(synth, dest, when, {
+      type: "sine",
+      freq: freq * 2,
+      gain: 0.04,
+      attack: 0.05,
+      hold: 0.2,
+      decay: 1.1,
+      curve: "linear"
+    });
+    index += 1;
+  }
+}
+
 function victory(synth: Synth, dest: AudioNode, at: number): void {
   metal(synth, dest, at, 146.83, [1, 2.0, 2.76, 5.4], {
     gain: 0.18,
@@ -723,6 +750,9 @@ export function playSfx(synth: Synth, dest: AudioNode, key: SfxKey, at: number):
       return;
     case "bossDeath":
       bossDeath(synth, dest, at);
+      return;
+    case "victorySting":
+      victorySting(synth, dest, at);
       return;
     case "victory":
       victory(synth, dest, at);

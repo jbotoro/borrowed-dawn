@@ -38,10 +38,12 @@ const LOOKAHEAD = 0.45;
 const MUTE_RAMP = 0.06;
 const PAUSE_DUCK = 0.5;
 
-function bedForRoom(room: Room): BedId {
-  if (room.music === "bellkeeper") return "bellkeeper";
-  if (room.music === "cinder") return "cinder";
-  return room.bossArena === undefined ? "cinder" : "bellkeeper";
+function bedForRoom(room: Room, dawn: boolean): BedId {
+  let id: BedId;
+  if (room.music === "bellkeeper") id = "bellkeeper";
+  else if (room.music === "cinder") id = "cinder";
+  else id = room.bossArena === undefined ? "cinder" : "bellkeeper";
+  return dawn && id === "cinder" ? "dawn" : id;
 }
 
 function pickupKey(event: GameEvent, state: GameState): SfxKey {
@@ -87,6 +89,8 @@ export function createAudio(tuning: Tuning): AudioApi {
   let intensity = 1;
   let aggro = false;
   let fileDuckUntil = 0;
+  let activeRoom: Room | null = null;
+  let dawn = false;
 
   function applyMusic(): void {
     if (ctx === null || synth === null || pauseDuck === null) return;
@@ -115,6 +119,18 @@ export function createAudio(tuning: Tuning): AudioApi {
     if (intensity > 1) bed.setIntensity(intensity, now);
     beds.push({ bed, stopAt: null });
     current = bed;
+  }
+
+  function selectBed(): void {
+    if (activeRoom === null) return;
+    const id = bedForRoom(activeRoom, dawn);
+    if (id === desired && current !== null) return;
+    if (id !== desired) {
+      aggro = false;
+      intensity = 1;
+    }
+    desired = id;
+    applyMusic();
   }
 
   function setMasterGain(at: number): void {
@@ -224,14 +240,8 @@ export function createAudio(tuning: Tuning): AudioApi {
     unlock,
     toggleMute,
     setRoom(room: Room): void {
-      const id = bedForRoom(room);
-      if (id === desired && current !== null) return;
-      if (id !== desired) {
-        aggro = false;
-        intensity = 1;
-      }
-      desired = id;
-      applyMusic();
+      activeRoom = room;
+      selectBed();
     },
     onEvent(event: GameEvent, state: GameState): void {
       if (event.kind === "death") duckForDeath();
@@ -249,8 +259,13 @@ export function createAudio(tuning: Tuning): AudioApi {
 
       const key = eventKey(event, state);
       if (key !== null) play(key);
+      if (event.kind === "bossDeath") play("victorySting");
     },
-    sync(_state: GameState, _dt: number): void {
+    sync(state: GameState, _dt: number): void {
+      if (state.progress.bossDefeated !== dawn) {
+        dawn = state.progress.bossDefeated;
+        selectBed();
+      }
       if (ctx === null) return;
       const now = ctx.currentTime;
       for (let i = beds.length - 1; i >= 0; i -= 1) {
