@@ -344,7 +344,6 @@ export function createAutoplayInput(game: Game): InputSource {
 
       if (
         !evaded &&
-        !retreating &&
         !input.jump &&
         blockedSince >= 0 &&
         state.time - blockedSince > BLOCKED_SECONDS

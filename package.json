@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "check": "tsc --noEmit && vitest run --reporter=dot && node scripts/check-autoplay.mjs",
     "snapshot": "node scripts/snapshot.mjs"
   },
   "dependencies": {
