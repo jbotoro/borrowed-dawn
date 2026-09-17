@@ -65,6 +65,25 @@ export const tuning = {
     hurtMs: 150,
     damage: 1
   },
+  lamplighter: {
+    width: 0.8,
+    height: 0.9,
+    health: 2,
+    hoverHeight: 3.2,
+    patrolSpeed: 1.6,
+    bobAmp: 0.25,
+    bobSpeed: 1.8,
+    sightRange: 6,
+    sightDepth: 5,
+    dropIntervalMs: 1600,
+    dropTelegraphMs: 400,
+    emberFallSpeed: 7,
+    emberWidth: 0.5,
+    emberHeight: 0.5,
+    emberLifeMs: 1500,
+    hurtMs: 150,
+    damage: 1
+  },
   boss: {
     width: 3,
     height: 3,
@@ -99,7 +118,8 @@ export const tuning = {
     checkpointWidth: 1,
     checkpointHeight: 1.5,
     pickupWidth: 0.7,
-    pickupHeight: 0.7
+    pickupHeight: 0.7,
+    flaskHealthBonus: 1
   },
   camera: {
     fovDeg: 45,
@@ -159,6 +179,12 @@ export const tuning = {
     playerLightIntensity: 1.1,
     playerLightDistance: 5,
     playerCoatEmissive: 0,
+    lanternHaloRadius: 0.9,
+    lanternHaloOpacity: 0.16,
+    lanternPoolWidth: 2.2,
+    lanternPoolOpacity: 0.12,
+    lanternBeamLength: 1.4,
+    lanternBeamOpacity: 0.08,
     actorPlateDepth: 0.06,
     actorPlateStep: 0.035,
     actorPinRadius: 0.028,
@@ -235,7 +261,10 @@ export const tuning = {
     fxLiftLifeMs: 620,
     fxLiftSize: 0.18,
     fxMarkOpacity: 0.85,
-    telegraphEdgeFraction: 0.4,
+    telegraphEdgeFraction: 0,
+    veilRevealRadius: 3,
+    veilFadePerSec: 2.5,
+    veilRestOpacity: 1,
     pickupHaloRadius: 0.45,
     pickupBobAmp: 0.12,
     pickupBobSpeed: 2.2,
@@ -290,7 +319,7 @@ export const tuning = {
     textureNormalizer: 0.82,
     shaftLength: 0.32,
     shaftGain: 3.2,
-    shaftThreshold: 0.21,
+    shaftThreshold: 0.08,
     shaftDirX: 0.22,
     dofGain: 4,
     inkThresholdScale: 0.02,
@@ -307,7 +336,10 @@ export const tuning = {
     duckOnDeath: 0.3,
     duckMs: 1600,
     crossfadeMs: 1600,
-    bossIntensity: 1.6
+    bossIntensity: 1.6,
+    fightPulseGain: 0.5,
+    fightTollBars: 1,
+    fightTempoScale: 1.15
   }
 };
 

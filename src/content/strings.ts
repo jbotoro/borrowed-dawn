@@ -33,14 +33,16 @@ export const WALL_BROKEN = "the wick cache opens";
 
 export const pickupNames: Record<PickupKind, string> = {
   longwick: "Longwick: your needle reaches further",
-  dawnCore: "Dawn Core: the shrine relights"
+  dawnCore: "Dawn Core: the shrine relights",
+  emberFlask: "Ember Flask: one more ember to burn"
 };
 
 export const roomNames = {
   landing: "Cinder Landing",
   gallery: "Chain Gallery",
   cache: "Wick Cache",
-  belfry: "Belfry"
+  belfry: "Belfry",
+  vault: "Ember Vault"
 };
 
 export type RoomId = keyof typeof roomNames;

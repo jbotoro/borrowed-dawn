@@ -49,6 +49,20 @@ const cacheAmbience: RoomAmbience = {
   emberDensity: 0.35
 };
 
+const vaultAmbience: RoomAmbience = {
+  fogColor: VOID,
+  fogNear: 11,
+  fogFar: 26,
+  hemiSky: ASH,
+  hemiGround: CHARCOAL,
+  hemiIntensity: 0.58,
+  keyColor: PORCELAIN,
+  keyIntensity: 0.66,
+  fillColor: EMBER,
+  fillIntensity: 0.26,
+  emberDensity: 0.55
+};
+
 const belfryAmbience: RoomAmbience = {
   fogColor: VOID,
   fogNear: 12,
@@ -165,7 +179,13 @@ const gallery: Room = {
     { x: 4.6, y: 5, w: 2.6, h: 0.6 },
     { x: 0, y: 7, w: 3.4, h: 0.6 },
     { x: 0, y: 9.6, w: 3.4, h: 1.2 },
-    { x: 26.6, y: 0.4, w: 1.8, h: 0.16 }
+    { x: 26.6, y: 0.4, w: 1.8, h: 0.16 },
+    { x: 5.3, y: 8.8, w: 2.4, h: 0.5 },
+    { x: 9.6, y: 10.0, w: 2.4, h: 0.5 },
+    { x: 13.2, y: 10.0, w: 6.6, h: 0.6 },
+    { x: 22.6, y: 9.8, w: 2.4, h: 0.5 },
+    { x: 27.6, y: 9.6, w: 2.4, h: 0.5 },
+    { x: 33.4, y: 9.15, w: 6.6, h: 0.6 }
   ],
   doors: [
     {
@@ -185,11 +205,18 @@ const gallery: Room = {
       to: "belfry",
       entry: { x: 1.7, y: 6.4 },
       entryFacing: 1
+    },
+    {
+      rect: { x: 39.4, y: 9.75, w: 1.2, h: 2.55 },
+      to: "vault",
+      entry: { x: 1.6, y: 0 },
+      entryFacing: 1
     }
   ],
   enemies: [
     { id: 1, kind: "guard", x: 25, y: 3.6, patrolMinX: 23, patrolMaxX: 27, facing: -1 },
-    { id: 2, kind: "stomper", x: 34, y: 0, patrolMinX: 31, patrolMaxX: 38, facing: -1 }
+    { id: 2, kind: "stomper", x: 34, y: 0, patrolMinX: 31, patrolMaxX: 38, facing: -1 },
+    { id: 4, kind: "lamplighter", x: 16.5, y: 10.6, patrolMinX: 13.6, patrolMaxX: 19.4, facing: -1 }
   ],
   pickups: [],
   gates: [],
@@ -232,7 +259,22 @@ const gallery: Room = {
     { kind: "gallery", rect: { x: 4.6, y: 0, w: 2.6, h: 5.6 }, z: 0 },
     { kind: "gallery", rect: { x: 0, y: 3.6, w: 3.4, h: 4.0 }, z: 0 },
     { kind: "wall", rect: { x: 0, y: 9.6, w: 3.4, h: 1.2 }, z: 0, intensity: 1 },
-    { kind: "bench", rect: { x: 26.6, y: 0, w: 1.8, h: 0.56 }, z: 0 }
+    { kind: "bench", rect: { x: 26.6, y: 0, w: 1.8, h: 0.56 }, z: 0 },
+    { kind: "chain", rect: { x: 5.45, y: 9.3, w: 0.3, h: 6.5 }, z: -0.9 },
+    { kind: "chain", rect: { x: 7.25, y: 9.3, w: 0.3, h: 6.5 }, z: -0.9 },
+    { kind: "beam", rect: { x: 5.3, y: 8.8, w: 2.4, h: 1.2 }, z: 0 },
+    { kind: "chain", rect: { x: 9.75, y: 10.5, w: 0.3, h: 5.3 }, z: -0.9 },
+    { kind: "chain", rect: { x: 11.55, y: 10.5, w: 0.3, h: 5.3 }, z: -0.9 },
+    { kind: "beam", rect: { x: 9.6, y: 10.0, w: 2.4, h: 1.2 }, z: 0 },
+    { kind: "gallery", rect: { x: 13.2, y: 0, w: 6.6, h: 10.6 }, z: 0 },
+    { kind: "chain", rect: { x: 22.75, y: 10.3, w: 0.3, h: 5.5 }, z: -0.9 },
+    { kind: "chain", rect: { x: 24.55, y: 10.3, w: 0.3, h: 5.5 }, z: -0.9 },
+    { kind: "beam", rect: { x: 22.6, y: 9.8, w: 2.4, h: 1.2 }, z: 0 },
+    { kind: "chain", rect: { x: 27.75, y: 10.1, w: 0.3, h: 5.7 }, z: -0.9 },
+    { kind: "chain", rect: { x: 29.55, y: 10.1, w: 0.3, h: 5.7 }, z: -0.9 },
+    { kind: "beam", rect: { x: 27.6, y: 9.6, w: 2.4, h: 1.2 }, z: 0 },
+    { kind: "gallery", rect: { x: 33.4, y: 0, w: 6.6, h: 9.75 }, z: 0 },
+    { kind: "veil", rect: { x: 40, y: 9.75, w: 8, h: 3.45 }, z: 0 }
   ],
   waypoints: [
     { x: 3, y: 0 },
@@ -382,7 +424,54 @@ const belfry: Room = {
   ]
 };
 
-export const rooms: Room[] = [landing, gallery, cache, belfry];
+const vault: Room = {
+  id: "vault",
+  name: roomNames.vault,
+  bounds: { x: 0, y: 0, w: 14, h: 8 },
+  solids: [
+    { x: -2, y: -2, w: 18, h: 2 },
+    { x: -2, y: 0, w: 2, h: 10 },
+    { x: 14, y: 0, w: 2, h: 10 },
+    { x: -2, y: 8, w: 18, h: 2 },
+    { x: 6.2, y: 0, w: 1.8, h: 0.9 }
+  ],
+  doors: [
+    {
+      rect: { x: -0.6, y: 0, w: 1.2, h: 2.55 },
+      to: "gallery",
+      entry: { x: 38.4, y: 9.75 },
+      entryFacing: -1
+    }
+  ],
+  enemies: [],
+  pickups: [{ id: "ember-flask", kind: "emberFlask", x: 7.1, y: 1.0 }],
+  gates: [],
+  breakables: [],
+  ambience: vaultAmbience,
+  music: "cinder",
+  decor: [
+    { kind: "block", rect: { x: -3, y: 0, w: 20, h: 2.6 }, z: -13 },
+    { kind: "wall", rect: { x: 0, y: 0, w: 14, h: 8 }, z: -4.2 },
+    { kind: "pillar", rect: { x: 2.8, y: 0, w: 1.0, h: 8 }, z: -3.4 },
+    { kind: "pillar", rect: { x: 10.2, y: 0, w: 1.0, h: 8 }, z: -3.4 },
+    { kind: "arch", rect: { x: 3.9, y: 0, w: 6.2, h: 5.6 }, z: -3.6, intensity: 1 },
+    { kind: "chain", rect: { x: 4.6, y: 4.6, w: 0.3, h: 3.4 }, z: -2.4 },
+    { kind: "pipe", rect: { x: 0, y: 5.2, w: 3.0, h: 0.3 }, z: -2.4, intensity: 1 },
+    { kind: "boiler", rect: { x: 1.3, y: 0, w: 2.2, h: 1.3 }, z: -2.2 },
+    { kind: "furnace", rect: { x: 12.9, y: 0.6, w: 1.0, h: 1.8 }, z: -2.2, intensity: 0.4 },
+    { kind: "rack", rect: { x: 10.0, y: 0.9, w: 2.4, h: 2.6 }, z: -1.5 },
+    { kind: "embers", rect: { x: 2, y: 0, w: 11, h: 6 }, z: -1.8, intensity: 0.6 },
+    { kind: "lamp", rect: { x: 14, y: 0, w: -3.0, h: 4.2 }, z: -0.9 },
+    { kind: "crate", rect: { x: 6.2, y: 0, w: 1.8, h: 0.9 }, z: 0 }
+  ],
+  waypoints: [
+    { x: 1.6, y: 0 },
+    { x: 5.0, y: 0 },
+    { x: 7.1, y: 0.9 }
+  ]
+};
+
+export const rooms: Room[] = [landing, gallery, cache, belfry, vault];
 
 export const demoStart: { room: string; pos: Vec2 } = {
   room: "gallery",

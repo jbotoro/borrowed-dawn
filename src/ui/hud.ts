@@ -76,7 +76,8 @@ export function createHud(root: HTMLElement): Hud {
 
   return {
     sync(state: GameState, tuning: Tuning): void {
-      const maxHealth = Math.max(1, Math.round(tuning.player.maxHealth));
+      const bonus = Math.max(0, Math.round(state.progress.maxHealthBonus));
+      const maxHealth = Math.max(1, Math.round(tuning.player.maxHealth) + bonus);
       if (maxHealth !== pipCount) {
         pipCount = maxHealth;
         lantern.replaceChildren();
