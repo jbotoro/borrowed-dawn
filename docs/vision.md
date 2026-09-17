@@ -329,7 +329,9 @@ The first-area release ends with the shrine relighting. This final choice belong
 
 # 8. Art direction rules per area
 
-All figures and scenery use procedural primitives, low-poly profiles, flat color, emissive surfaces, and motion. No drawn textures, imported models, or generated character art.
+2026-09-16 update: visual execution is being reconsidered through the human-approved candidate/feedback process in `docs/visual-upgrade-plan.md`. Read its "Resume here" section for the human's Paper Mario, Hollow Knight, and Limbo references and the next concept-sheet deliverable. The palette and primitive silhouettes below describe the existing baseline, not a selected outcome of that process. A monochrome treatment is a valid candidate. Preserve original fiction and gameplay readability while exploring.
+
+Current runtime baseline: figures and scenery use procedural primitives, low-poly profiles, flat color, emissive surfaces, and motion. Generated/sourced concept references are allowed in the accepted exploration; which drawn textures, sprites, or other assets ship is decided with the chosen direction.
 
 | Area | Palette: five colors | Light sources | Fog and depth |
 |---|---|---|---|

@@ -2,8 +2,12 @@
 
 Label: wayfinder:grilling (HITL)
 Blocked by: 09
-Claimed by: none
-Status: open
+Claimed by: human, 2026-09-16 (self-test on the m2-skeleton build)
+Status: resolved as a self-test; independent validation missing
+
+## Resolution
+
+The human played the Bellkeeper on the m2-skeleton build and ticked every Gate 2a box as a self-test (uses all verbs from the instructions, avoids both attacks deliberately, punishes a recovery, names the threat after a death, adapts, retries voluntarily, and demonstrated wins with and without the Longwick). Verdict in `docs/playtest.md`: "mechanics and difficulty seem fine." No boss numbers changed. Independent validation by an uncoached tester is still missing and stays marked missing on the gate until someone else plays the shared link. The human's blocking objection at this gate was the look ("a flash game from 2009"), which moved the art direction ahead of further boss tuning (ticket 05, `docs/visual-upgrade-plan.md`).
 Window: Wednesday 16:00 and 17:30 self tests; colleague at 19:00; decision by 20:00
 
 ## Question

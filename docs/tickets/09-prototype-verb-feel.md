@@ -2,8 +2,12 @@
 
 Label: wayfinder:prototype (HITL)
 Blocked by: the side-view skeleton slice landing (agents A, B, C)
-Claimed by: none
-Status: open
+Claimed by: human, 2026-09-16 13:20
+Status: closed 2026-09-16 13:20
+
+## Resolution
+
+Gate 1 played by hand on the deployed `m2-skeleton` build: jump height and hang, landing, attack windup and reach, dash as escape and commitment, and the enemy encounter all ticked at the tuning defaults; no numbers were changed. The defaults stand as the first-fun baseline: walk 8, jump velocity 14.5 with gravity 42 (about 2.5 units of height), coyote 100 ms, buffer 120 ms, dash 4.5 units over 150 ms with a 500 ms cooldown, attack 60/90/160 ms with reach 1.6. Astra's first cut (broad platforms, shallow elevation) was not triggered. Revisit only if the boss session (ticket 10) exposes a verb problem.
 Window: Wednesday 12:00 (movement and landing) and 13:00 (combat and death loop)
 
 ## Question
