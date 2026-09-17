@@ -159,13 +159,53 @@ export interface PickupPlacement {
   y: number;
 }
 
-export type DecorKind = "block" | "pillar" | "chain" | "cylinder" | "bell" | "glow" | "rim";
+export type DecorKind =
+  | "block"
+  | "pillar"
+  | "chain"
+  | "cylinder"
+  | "bell"
+  | "glow"
+  | "rim"
+  | "furnace"
+  | "embers"
+  | "shaft"
+  | "boiler"
+  | "grate"
+  | "stair"
+  | "gallery"
+  | "beam"
+  | "bench"
+  | "crate"
+  | "rack"
+  | "winch"
+  | "yoke"
+  | "arch"
+  | "wall"
+  | "rubble"
+  | "lamp"
+  | "pipe";
 
 export interface Decor {
   kind: DecorKind;
   rect: Rect;
   z: number;
   color?: number;
+  intensity?: number;
+}
+
+export interface RoomAmbience {
+  fogColor: number;
+  fogNear: number;
+  fogFar: number;
+  hemiSky: number;
+  hemiGround: number;
+  hemiIntensity: number;
+  keyColor: number;
+  keyIntensity: number;
+  fillColor: number;
+  fillIntensity: number;
+  emberDensity: number;
 }
 
 export interface BossArena {
@@ -189,6 +229,8 @@ export interface Room {
   bossArena?: BossArena;
   decor: Decor[];
   waypoints: Vec2[];
+  ambience?: RoomAmbience;
+  music?: string;
 }
 
 export interface Progress {

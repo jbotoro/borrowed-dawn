@@ -12,6 +12,7 @@ export interface SideCamera {
 
 export function createSideCamera(tuning: Tuning, aspect: number): SideCamera {
   const camera = new THREE.PerspectiveCamera(tuning.camera.fovDeg, aspect, 0.1, 400);
+  camera.layers.enableAll();
   camera.position.set(0, 0, tuning.camera.distance);
 
   let viewAspect = aspect;

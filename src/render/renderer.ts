@@ -5,12 +5,16 @@ export interface RendererHandle {
   resize(): void;
 }
 
-export function createRenderer(canvas: HTMLCanvasElement): RendererHandle {
+export function createRenderer(canvas: HTMLCanvasElement, shadows: boolean): RendererHandle {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
+  if (shadows) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
 
   return {
     renderer,
