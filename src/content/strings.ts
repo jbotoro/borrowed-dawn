@@ -1,6 +1,6 @@
 import type { PickupKind } from "../game/types";
 
-export const TITLE = "ONE MORE RUN";
+export const TITLE = "BORROWED DAWN";
 
 export const HOOK = "Steal the sunrise from the machines that hoard it.";
 
@@ -20,6 +20,8 @@ export const DEATH = "the ember gutters";
 export const VICTORY = "The bell falls silent. The furnace stays warm.";
 
 export const BOSS_INTRO = "THE BELLKEEPER - No light leaves the reserve.";
+
+export const BOSS_NAME = "THE BELLKEEPER";
 
 export const LONGWICK_BADGE = "Longwick";
 
