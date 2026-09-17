@@ -1,6 +1,6 @@
 import type { Tuning } from "../tuning";
 import type { GameState } from "../game/types";
-import { LONGWICK_BADGE, roomName } from "../content/strings";
+import { BOSS_NAME, LONGWICK_BADGE, roomName } from "../content/strings";
 
 export interface Hud {
   sync(state: GameState, tuning: Tuning): void;
@@ -45,8 +45,25 @@ export function createHud(root: HTMLElement): Hud {
   const roomLabel = document.createElement("div");
   roomLabel.className = "hud-room";
 
+  const bossBar = document.createElement("div");
+  bossBar.className = "hud-boss";
+  const bossName = document.createElement("div");
+  bossName.className = "hud-boss-name";
+  bossName.textContent = BOSS_NAME;
+  const bossTrack = document.createElement("div");
+  bossTrack.className = "hud-boss-track";
+  const bossFill = document.createElement("div");
+  bossFill.className = "hud-boss-fill";
+  bossTrack.appendChild(bossFill);
+  bossBar.appendChild(bossName);
+  bossBar.appendChild(bossTrack);
+
   root.appendChild(hud);
   root.appendChild(roomLabel);
+  root.appendChild(bossBar);
+
+  let lastBossPercent = -1;
+  let bossVisible: boolean | null = null;
 
   let pipCount = -1;
   let lastHealth = -1;
@@ -117,6 +134,22 @@ export function createHud(root: HTMLElement): Hud {
 
       const hidden = state.phase === "title";
       hud.classList.toggle("hidden", hidden);
+
+      const boss = state.boss;
+      const showBoss =
+        !hidden && boss !== null && boss.alive && boss.state !== "dormant";
+      if (showBoss !== bossVisible) {
+        bossVisible = showBoss;
+        bossBar.classList.toggle("show", showBoss);
+      }
+      if (boss !== null) {
+        const fraction = Math.max(0, Math.min(1, boss.health / Math.max(boss.maxHealth, 1)));
+        const bossPercent = Math.round(fraction * 1000) / 10;
+        if (bossPercent !== lastBossPercent) {
+          lastBossPercent = bossPercent;
+          bossFill.style.width = bossPercent + "%";
+        }
+      }
     }
   };
 }

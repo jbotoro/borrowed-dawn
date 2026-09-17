@@ -10,8 +10,10 @@ export function mountConfigurator(): GUI {
     const folder = gui.addFolder(groupName);
     for (const [key, value] of Object.entries(group)) {
       if (typeof value === "number") {
-        const max = value === 0 ? 1 : Math.abs(value) * 4;
-        folder.add(group as Record<string, number>, key, 0, max);
+        const span = value === 0 ? 1 : Math.abs(value) * 4;
+        const min = value < 0 ? -span : 0;
+        const max = value < 0 ? 0 : span;
+        folder.add(group as Record<string, number>, key, min, max);
       }
     }
     folder.close();
@@ -50,7 +52,16 @@ export function mountConfigurator(): GUI {
   gui.add(actions, "exportJson").name("copy tuning as JSON");
   gui.add(actions, "resetSaved").name("reset saved overrides");
 
-  if (new URLSearchParams(location.search).get("screenshot") === "1") gui.hide();
+  const screenshot = new URLSearchParams(location.search).get("screenshot") === "1";
+  gui.hide();
+  if (!screenshot) {
+    window.addEventListener("keydown", (event) => {
+      if (event.code !== "Backquote") return;
+      event.preventDefault();
+      if (gui._hidden) gui.show();
+      else gui.hide();
+    });
+  }
 
   return gui;
 }

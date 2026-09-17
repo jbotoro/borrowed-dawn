@@ -11,6 +11,7 @@ import { createTitle } from "./ui/title";
 import { createPause } from "./ui/pause";
 import { createBanners } from "./ui/banners";
 import { mountConfigurator } from "./ui/configurator";
+import { createAudio } from "./audio";
 
 if (params.screenshot) document.body.classList.add("screenshot");
 
@@ -52,22 +53,25 @@ const title = createTitle(ui);
 const pause = createPause(ui);
 const banners = createBanners(ui);
 
+const audio = createAudio(tuning);
+
 function enterRoom(): void {
   const room = game.currentRoom();
   world.setRoom(room, game.state.progress);
   world.snapCamera(room, game.state.player);
+  audio.setRoom(room);
 }
 
 enterRoom();
 
-window.addEventListener("resize", () => world.resize());
-
 let last = performance.now();
+let renderTime = 0;
 const pending = emptyInput();
 
 function frame(now: number): void {
   const realDt = Math.min((now - last) / 1000, 0.1) * params.fast;
   last = now;
+  renderTime += realDt;
 
   const sampled = input.sample();
   pending.moveX = sampled.moveX;
@@ -104,12 +108,14 @@ function frame(now: number): void {
     else if (event.kind === "enemyDeath") world.addShake(tuning.feel.shakeOnKill);
     else if (event.kind === "bossAttack") world.addShake(tuning.feel.shakeOnBossSlam);
     world.onEvent(event, state, tuning);
+    audio.onEvent(event, state);
     banners.onEvent(event, state);
   }
   state.events.length = 0;
 
   const room = game.currentRoom();
-  world.sync(state, room, alpha, realDt, state.time, tuning);
+  world.sync(state, room, alpha, realDt, state.time, renderTime, tuning);
+  audio.sync(state, realDt);
   hud.sync(state, tuning);
   title.sync(state);
   pause.sync(state);
@@ -129,10 +135,12 @@ declare global {
       params: typeof params;
       rooms: typeof rooms;
     };
+    __omrAudio: typeof audio;
   }
 }
 
 window.__omr = { game, tuning, params, rooms };
+window.__omrAudio = audio;
 
 console.log("[one-more-run] boot ok", {
   seed: params.seed,
