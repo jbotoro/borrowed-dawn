@@ -19,6 +19,8 @@ export const DEATH = "the ember gutters";
 
 export const VICTORY = "The bell falls silent. The furnace stays warm.";
 
+export const VICTORY_PROMPT = "ENTER to return to the landing";
+
 export const BOSS_INTRO = "THE BELLKEEPER - No light leaves the reserve.";
 
 export const BOSS_NAME = "THE BELLKEEPER";

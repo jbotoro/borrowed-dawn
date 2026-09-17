@@ -1,8 +1,9 @@
+import type { Tuning } from "../tuning";
 import type { GameState } from "../game/types";
 import { CONTROLS, HOOK, START_PROMPT, TITLE } from "../content/strings";
 
 export interface TitleScreen {
-  sync(state: GameState): void;
+  sync(state: GameState, tuning: Tuning): void;
 }
 
 export function createTitle(root: HTMLElement): TitleScreen {
@@ -21,7 +22,7 @@ export function createTitle(root: HTMLElement): TitleScreen {
   controls.textContent = CONTROLS;
 
   const prompt = document.createElement("p");
-  prompt.className = "screen-prompt";
+  prompt.className = "screen-prompt screen-prompt-pulse";
   prompt.textContent = START_PROMPT;
 
   screen.appendChild(heading);
@@ -31,9 +32,15 @@ export function createTitle(root: HTMLElement): TitleScreen {
   root.appendChild(screen);
 
   let visible: boolean | null = null;
+  let pulseMs = -1;
 
   return {
-    sync(state: GameState): void {
+    sync(state: GameState, tuning: Tuning): void {
+      const ms = Math.max(1, tuning.feel.titlePulseMs);
+      if (ms !== pulseMs) {
+        pulseMs = ms;
+        prompt.style.setProperty("--pulse-ms", ms + "ms");
+      }
       const show = state.phase === "title";
       if (show !== visible) {
         visible = show;

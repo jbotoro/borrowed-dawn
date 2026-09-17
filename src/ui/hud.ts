@@ -126,7 +126,9 @@ export function createHud(root: HTMLElement): Hud {
       }
 
       const showRoom =
-        state.phase !== "title" && state.time - roomShownAt < ROOM_LABEL_MS / 1000;
+        state.phase !== "title" &&
+        state.phase !== "paused" &&
+        state.time - roomShownAt < ROOM_LABEL_MS / 1000;
       if (showRoom !== roomVisible) {
         roomVisible = showRoom;
         roomLabel.classList.toggle("show", showRoom);
@@ -137,7 +139,12 @@ export function createHud(root: HTMLElement): Hud {
 
       const boss = state.boss;
       const showBoss =
-        !hidden && boss !== null && boss.alive && boss.state !== "dormant";
+        !hidden &&
+        state.phase !== "dead" &&
+        state.phase !== "victory" &&
+        boss !== null &&
+        boss.alive &&
+        boss.state !== "dormant";
       if (showBoss !== bossVisible) {
         bossVisible = showBoss;
         bossBar.classList.toggle("show", showBoss);

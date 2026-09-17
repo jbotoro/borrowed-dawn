@@ -207,7 +207,9 @@ body {
   left: 50%;
   top: 24%;
   transform: translate(-50%, -50%);
+  width: max-content;
   max-width: 80vw;
+  text-wrap: balance;
   padding: 10px 26px 8px;
   text-align: center;
   font-size: 26px;
@@ -224,12 +226,62 @@ body {
   opacity: 1;
 }
 
+#ui .banner-intro {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+#ui .banner-death {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+#ui .banner-victory {
+  top: 32%;
+  font-size: clamp(22px, 3.2vw, 44px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.16em;
+  padding: 16px 40px 12px;
+  color: var(--porcelain);
+}
+
+#ui .banner-prompt {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.36em;
+  text-transform: uppercase;
+  color: var(--amber);
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+
+#ui .banner-prompt.show {
+  opacity: 1;
+}
+
+#ui .fade {
+  position: absolute;
+  inset: 0;
+  background: var(--void);
+  opacity: 0;
+}
+
 #ui .vignette {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle at 50% 50%, rgba(7, 9, 13, 0) 25%, rgba(7, 9, 13, 0.92) 95%);
   opacity: 0;
-  transition: opacity 500ms ease;
+  transition: opacity var(--vignette-ms, 500ms) ease-in;
 }
 
 #ui .vignette.show {
@@ -280,11 +332,22 @@ body {
   border-bottom: 1px solid var(--porcelain);
 }
 
+#ui .screen-pause {
+  gap: 0;
+  background: rgba(7, 9, 13, 0.72);
+}
+
 #ui .screen-pause h1 {
   font-size: 48px;
   letter-spacing: 0.4em;
   font-weight: 500;
   text-transform: uppercase;
+}
+
+#ui .screen-pause .screen-where {
+  margin: 14px 0 0;
+  color: var(--porcelain);
+  opacity: 0.8;
 }
 
 #ui .screen-hook {
@@ -312,8 +375,34 @@ body {
   color: var(--amber);
 }
 
+#ui .screen-pause .screen-controls {
+  margin-top: 30px;
+}
+
 #ui .screen-pause .screen-prompt {
-  margin-top: 8px;
+  margin-top: 16px;
+}
+
+#ui .screen-prompt-pulse {
+  animation: prompt-pulse var(--pulse-ms, 2200ms) ease-in-out infinite;
+}
+
+@keyframes prompt-pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.38;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ui .screen-prompt-pulse {
+    animation: none;
+  }
 }
 
 body.screenshot #ui {

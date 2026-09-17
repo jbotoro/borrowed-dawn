@@ -10,6 +10,7 @@ import { createHud } from "./ui/hud";
 import { createTitle } from "./ui/title";
 import { createPause } from "./ui/pause";
 import { createBanners } from "./ui/banners";
+import { createFade } from "./ui/fade";
 import { mountConfigurator } from "./ui/configurator";
 import { createAudio } from "./audio";
 
@@ -52,6 +53,7 @@ const hud = createHud(ui);
 const title = createTitle(ui);
 const pause = createPause(ui);
 const banners = createBanners(ui);
+const fade = createFade(ui);
 
 const audio = createAudio(tuning);
 
@@ -109,7 +111,8 @@ function frame(now: number): void {
     else if (event.kind === "bossAttack") world.addShake(tuning.feel.shakeOnBossSlam);
     world.onEvent(event, state, tuning);
     audio.onEvent(event, state);
-    banners.onEvent(event, state);
+    banners.onEvent(event, state, tuning);
+    fade.onEvent(event, tuning);
   }
   state.events.length = 0;
 
@@ -117,9 +120,9 @@ function frame(now: number): void {
   world.sync(state, room, alpha, realDt, state.time, renderTime, tuning);
   audio.sync(state, realDt);
   hud.sync(state, tuning);
-  title.sync(state);
+  title.sync(state, tuning);
   pause.sync(state);
-  banners.sync(state);
+  banners.sync(state, tuning);
   world.render();
 
   requestAnimationFrame(frame);
