@@ -3,6 +3,12 @@ import { lfo, metal, noiseBurst, stopSource, tone } from "./synth";
 
 export type BedId = "cinder" | "bellkeeper" | "dawn";
 
+export interface BedConfig {
+  readonly fightPulseGain: number;
+  readonly fightTollBars: number;
+  readonly fightTempoScale: number;
+}
+
 export interface Bed {
   readonly id: BedId;
   start(at: number): void;
@@ -11,6 +17,7 @@ export interface Bed {
   fadeOut(at: number, seconds: number): number;
   setIntensity(value: number, at: number): void;
   setPhase2(at: number): void;
+  bossDown(at: number): void;
   stop(at: number): void;
 }
 
@@ -46,6 +53,14 @@ const ORGAN_SWELL = 2.2;
 const ORGAN_HOLD = 3.4;
 const ORGAN_RELEASE = 3.8;
 
+const FIGHT_ROOT = 36.71;
+const FIGHT_VOICE_ROOT = 293.66;
+const FIGHT_VOICE_RATIOS = [1, 2.01, 3.38];
+const FIGHT_PEDAL = [73.42, 87.31, 98.0, 110.0];
+const FIGHT_IN = 0.5;
+const FIGHT_OUT = 0.9;
+const FIGHT_GATE = 1.05;
+
 function pick(table: number[][], index: number): number[] {
   const row = table[((index % table.length) + table.length) % table.length];
   return row === undefined ? [] : row;
@@ -56,7 +71,7 @@ function pickNumber(table: number[], index: number, fallback: number): number {
   return value === undefined ? fallback : value;
 }
 
-export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
+export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConfig): Bed {
   const ctx = synth.ctx;
   const dawn = id === "dawn";
   const baseCutoff = dawn ? ORGAN_CUTOFF * DAWN_CUTOFF_SCALE : ORGAN_CUTOFF;
@@ -87,6 +102,10 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
   furnaceBus.gain.value = 1;
   furnaceBus.connect(output);
 
+  const fightBus = ctx.createGain();
+  fightBus.gain.value = 0;
+  fightBus.connect(output);
+
   const continuous: AudioScheduledSourceNode[] = [];
 
   let nextStep = 0;
@@ -94,6 +113,20 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
   let intensity = 1;
   let phase2 = false;
   let started = false;
+  let fight = false;
+
+  function rampFight(to: number, at: number, seconds: number): void {
+    const param = fightBus.gain;
+    param.cancelScheduledValues(at);
+    param.setValueAtTime(param.value, at);
+    param.linearRampToValueAtTime(to, at + seconds);
+  }
+
+  function stepSeconds(): number {
+    if (!fight) return STEP;
+    const scale = cfg.fightTempoScale > 0.1 ? cfg.fightTempoScale : 1;
+    return STEP / scale;
+  }
 
   function strike(at: number, level: number): void {
     const gain = level * intensity;
@@ -177,11 +210,11 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
     }
   }
 
-  function toll(at: number, index: number): void {
+  function toll(at: number, index: number, decay: number, gain: number): void {
     const root = pickNumber(TOLL_ROOTS, index, 110);
     metal(synth, tollBus, at, root, TOLL_RATIOS, {
-      gain: 0.2 * intensity,
-      decay: 4.6,
+      gain,
+      decay,
       falloff: 0.62,
       spread: 0.16,
       filter: { type: "lowpass", freq: 2400, q: 0.6 }
@@ -191,6 +224,64 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
       attack: 0.002,
       decay: 0.25,
       filter: { type: "bandpass", freq: 900, freqTo: 400, sweep: 0.25, q: 1.6 }
+    });
+  }
+
+  function fightPulse(at: number, step: number): void {
+    const level = Math.max(cfg.fightPulseGain, 0) * (step % 4 === 0 ? 1 : 0.68);
+    tone(synth, fightBus, at, {
+      type: "sawtooth",
+      freq: FIGHT_ROOT * 2,
+      freqTo: FIGHT_ROOT,
+      glide: 0.08,
+      gain: level,
+      attack: 0.004,
+      decay: 0.17,
+      filter: { type: "lowpass", freq: 300, q: 1.3 }
+    });
+  }
+
+  function fightVoice(at: number, doubled: boolean): void {
+    metal(synth, fightBus, at, FIGHT_VOICE_ROOT, FIGHT_VOICE_RATIOS, {
+      gain: 0.08,
+      decay: 0.34,
+      falloff: 0.5,
+      spread: 0.3,
+      filter: { type: "bandpass", freq: 2200, q: 1.1 }
+    });
+    if (!doubled) return;
+    metal(synth, fightBus, at, FIGHT_VOICE_ROOT * 2, FIGHT_VOICE_RATIOS, {
+      gain: 0.05,
+      decay: 0.26,
+      falloff: 0.5,
+      spread: 0.3,
+      filter: { type: "highpass", freq: 1800, q: 0.9 }
+    });
+  }
+
+  function pedal(at: number, index: number, span: number): void {
+    const freq = pickNumber(FIGHT_PEDAL, index, 73.42);
+    const next = pickNumber(FIGHT_PEDAL, index + 1, 98.0);
+    tone(synth, fightBus, at, {
+      type: "sawtooth",
+      freq,
+      freqTo: next,
+      glide: span,
+      gain: 0.07,
+      attack: span * 0.55,
+      decay: span * 0.45,
+      curve: "linear",
+      filter: { type: "lowpass", freq: 320, freqTo: 1100, sweep: span, q: 1.5 }
+    });
+    tone(synth, fightBus, at, {
+      type: "triangle",
+      freq: freq * 2,
+      freqTo: next * 2,
+      glide: span,
+      gain: 0.035,
+      attack: span * 0.6,
+      decay: span * 0.4,
+      curve: "linear"
     });
   }
 
@@ -262,13 +353,15 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
   function scheduleUntil(until: number): void {
     if (!started) return;
     const now = ctx.currentTime;
+    const span = stepSeconds();
     if (nextStep < now) {
-      const skipped = Math.ceil((now - nextStep) / STEP);
-      nextStep += skipped * STEP;
+      const skipped = Math.ceil((now - nextStep) / span);
+      nextStep += skipped * span;
       stepIndex += skipped;
     }
     while (nextStep < until) {
       const at = nextStep;
+      const dur = stepSeconds();
       const step = stepIndex % STEPS_PER_BAR;
       const bar = Math.floor(stepIndex / STEPS_PER_BAR);
       if (dawn) {
@@ -276,16 +369,28 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
           if (bar % 2 === 0) organ(at, bar / 2);
           else rise(at, (bar - 1) / 2);
         }
-      } else if (step === 0) {
-        strike(at, 0.5);
-        if (bar % 2 === 0) organ(at, bar / 2);
-        if (id === "bellkeeper" && bar % (phase2 ? 2 : 4) === 0) toll(at, bar / 2);
-      } else if (step === 4) {
-        strike(at, 0.3);
-      } else if (step === 6 && intensity > 1.05) {
-        strike(at, Math.min(0.3, 0.3 * (intensity - 1)));
+      } else {
+        if (step === 0) {
+          strike(at, 0.5);
+          if (bar % 2 === 0) organ(at, bar / 2);
+        } else if (step === 4) {
+          strike(at, 0.3);
+        } else if (step === 6 && intensity > FIGHT_GATE) {
+          strike(at, Math.min(0.3, 0.3 * (intensity - 1)));
+        }
+        if (fight) {
+          fightPulse(at, step);
+          if (step % 2 === 1) fightVoice(at, phase2);
+          if (step === 0) {
+            const bars = Math.max(1, Math.round(cfg.fightTollBars));
+            if (bar % bars === 0) toll(at, bar, 4.2, 0.26 * intensity);
+            if (phase2) pedal(at, bar, dur * STEPS_PER_BAR);
+          }
+        } else if (id === "bellkeeper" && step === 0 && bar % (phase2 ? 2 : 4) === 0) {
+          toll(at, bar / 2, 4.6, 0.2 * intensity);
+        }
       }
-      nextStep += STEP;
+      nextStep += dur;
       stepIndex += 1;
     }
   }
@@ -319,6 +424,11 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
     },
     setIntensity(value: number, at: number): void {
       intensity = value;
+      const want = id === "bellkeeper" && value > FIGHT_GATE;
+      if (want !== fight) {
+        fight = want;
+        rampFight(want ? 1 : 0, at, want ? FIGHT_IN : FIGHT_OUT);
+      }
       organFilter.frequency.cancelScheduledValues(at);
       organFilter.frequency.setValueAtTime(organFilter.frequency.value, at);
       organFilter.frequency.linearRampToValueAtTime(baseCutoff * value, at + 2.5);
@@ -333,10 +443,17 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId): Bed {
       furnaceBus.gain.setValueAtTime(furnaceBus.gain.value, at);
       furnaceBus.gain.linearRampToValueAtTime(1.45, at + 2);
     },
+    bossDown(at: number): void {
+      if (id !== "bellkeeper") return;
+      fight = false;
+      rampFight(0, at, FIGHT_OUT);
+      toll(at, 1, 9.5, 0.34);
+    },
     stop(at: number): void {
       for (const node of continuous) stopSource(node, at);
       continuous.length = 0;
       started = false;
+      fight = false;
       output.disconnect();
     }
   };

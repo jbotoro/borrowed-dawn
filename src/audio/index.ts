@@ -113,7 +113,7 @@ export function createAudio(tuning: Tuning): AudioApi {
       if (slot.stopAt === null) slot.stopAt = slot.bed.fadeOut(now, fade);
     }
 
-    const bed = createBed(synth, pauseDuck, desired);
+    const bed = createBed(synth, pauseDuck, desired, cfg);
     bed.start(now);
     bed.fadeIn(now, fade);
     if (intensity > 1) bed.setIntensity(intensity, now);
@@ -255,6 +255,15 @@ export function createAudio(tuning: Tuning): AudioApi {
       }
       if (event.kind === "bossPhase" && ctx !== null && current !== null) {
         current.setPhase2(ctx.currentTime);
+      }
+      if (event.kind === "bossDeath") {
+        aggro = false;
+        intensity = 1;
+        if (ctx !== null && current !== null) {
+          const now = ctx.currentTime;
+          current.setIntensity(1, now);
+          current.bossDown(now);
+        }
       }
 
       const key = eventKey(event, state);
