@@ -94,7 +94,7 @@ export function resolveCombat(
   aabbOf(player.pos, tuning.player.width, tuning.player.height, bodyA);
 
   for (const enemy of state.enemies) {
-    if (!enemy.alive || enemy.state === "hurt") {
+    if (!enemy.alive || enemy.state === "hurt" || enemy.kind === "lamplighter") {
       continue;
     }
     const cfg = enemyConfig(enemy.kind, tuning);

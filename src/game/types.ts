@@ -51,7 +51,7 @@ export interface PlayerState {
   longwick: boolean;
 }
 
-export type EnemyKind = "guard" | "stomper";
+export type EnemyKind = "guard" | "stomper" | "lamplighter";
 export type EnemyState = "patrol" | "telegraph" | "attack" | "recover" | "hurt" | "dead";
 
 export interface Enemy {
@@ -104,7 +104,10 @@ export interface Boss {
   flash: number;
 }
 
+export type HazardKind = "wave" | "ember";
+
 export interface Hazard {
+  kind: HazardKind;
   pos: Vec2;
   prev: Vec2;
   vel: Vec2;
@@ -115,7 +118,7 @@ export interface Hazard {
   alive: boolean;
 }
 
-export type PickupKind = "longwick" | "dawnCore";
+export type PickupKind = "longwick" | "dawnCore" | "emberFlask";
 
 export interface Pickup {
   id: string;
@@ -187,7 +190,8 @@ export type DecorKind =
   | "wall"
   | "rubble"
   | "lamp"
-  | "pipe";
+  | "pipe"
+  | "veil";
 
 export interface Decor {
   kind: DecorKind;
@@ -244,6 +248,7 @@ export interface Progress {
   broken: string[];
   bossDefeated: boolean;
   deaths: number;
+  maxHealthBonus: number;
 }
 
 export type GameEventKind =

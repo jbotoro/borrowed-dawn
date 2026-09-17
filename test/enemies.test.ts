@@ -4,6 +4,7 @@ import { countHazards, createHazards } from "../src/game/hazards";
 import { activeSolids } from "../src/game/rooms";
 import { createProgress } from "../src/game/progress";
 import type { Enemy, GameEvent, Hazard, Rect } from "../src/game/types";
+import { findRoom } from "../src/content/rooms";
 import { tuning } from "../src/tuning";
 import { DT, countEvents, playerAt } from "./helpers";
 import { makeRooms, roomById } from "./fixtures/rooms";
@@ -44,6 +45,40 @@ function stomperOf(enemies: Enemy[]): Enemy {
 }
 
 describe("guard", () => {
+  it("stays within its Gallery patrol range while lunging at the neighbouring platform", () => {
+    const gallery = findRoom("gallery");
+    if (!gallery) {
+      throw new Error("no Gallery room");
+    }
+    const progress = createProgress(gallery.id, { x: 20.8, y: 3.6 });
+    const solids: Rect[] = [];
+    activeSolids(gallery, progress, solids);
+    const enemies = spawnEnemies(gallery, tuning);
+    const guard = guardOf(enemies);
+    const player = playerAt(20.8, 3.6);
+    const hazards = createHazards(tuning.world.hazardCapacity);
+    const statesSeen = new Set<Enemy["state"]>();
+    const placementY = guard.pos.y;
+    let t = 0;
+
+    for (let i = 0; i < 8 / DT; i += 1) {
+      player.pos.x = 20.8;
+      player.pos.y = 3.6;
+      player.prev.x = player.pos.x;
+      player.prev.y = player.pos.y;
+      player.vel.y = 0;
+      stepEnemies(enemies, player, solids, hazards, t, DT, tuning);
+      statesSeen.add(guard.state);
+      expect(guard.pos.y).toBeGreaterThanOrEqual(placementY - 0.1);
+      expect(guard.pos.x).toBeGreaterThanOrEqual(guard.patrolMinX);
+      expect(guard.pos.x).toBeLessThanOrEqual(guard.patrolMaxX);
+      t += DT;
+    }
+
+    expect(statesSeen.has("telegraph")).toBe(true);
+    expect(statesSeen.has("attack")).toBe(true);
+  });
+
   it("patrols between its bounds and turns at the ends", () => {
     const s = setup();
     const guard = guardOf(s.enemies);
@@ -125,6 +160,7 @@ describe("stomper", () => {
     expect(stomper.facing).toBe(-1);
     const live = s.hazards.filter((h) => h.alive);
     expect(live.length).toBe(2);
+    expect(live.every((hazard) => hazard.kind === "wave")).toBe(true);
     const dirs = live.map((h) => Math.sign(h.vel.x)).sort();
     expect(dirs).toEqual([-1, 1]);
     expect(live[0]?.damage).toBe(tuning.stomper.damage);

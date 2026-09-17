@@ -38,7 +38,7 @@ export function cloneTuning(): Tuning {
 
 export function playerAt(x: number, y: number, tuning: Tuning = baseTuning): PlayerState {
   const player = createPlayer();
-  resetPlayer(player, { x, y }, 1, tuning);
+  resetPlayer(player, { x, y }, 1, tuning, 0);
   return player;
 }
 

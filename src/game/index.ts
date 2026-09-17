@@ -110,10 +110,10 @@ export function createGame(deps: GameDeps): Game {
     state.roomId = room.id;
     placePlayer(player, pos, facing);
     if (heal) {
-      player.health = tuning.player.maxHealth;
+      player.health = tuning.player.maxHealth + state.progress.maxHealthBonus;
     }
     const bossRoom = room.bossArena !== undefined;
-    state.enemies = bossRoom && state.progress.bossDefeated ? [] : spawnEnemies(room, tuning);
+    state.enemies = bossRoom && state.progress.bossDefeated ? [] : spawnEnemies(room, tuning, state.time);
     state.boss = state.progress.bossDefeated ? null : spawnBoss(room, tuning);
     state.pickups = pickupsFor(room, state.progress);
     clearHazards(hazards);
@@ -133,9 +133,9 @@ export function createGame(deps: GameDeps): Game {
     state.victoryAt = 0;
     state.transition = null;
     breakableHp.clear();
-    resetPlayer(player, startPos, 1, tuning);
-    player.longwick = false;
     state.progress = createProgress(startRoom.id, startPos);
+    resetPlayer(player, startPos, 1, tuning, state.progress.maxHealthBonus);
+    player.longwick = false;
     enterRoom(startRoom.id, startPos, 1, true);
     state.progress.checkpointRoom = room.id;
     state.progress.checkpoint.x = startPos.x;
@@ -152,9 +152,9 @@ export function createGame(deps: GameDeps): Game {
     state.victoryAt = 0;
     state.transition = null;
     breakableHp.clear();
-    resetPlayer(player, startPos, 1, tuning);
-    player.longwick = false;
     state.progress = createProgress(startRoom.id, startPos);
+    resetPlayer(player, startPos, 1, tuning, state.progress.maxHealthBonus);
+    player.longwick = false;
     enterRoom(startRoom.id, startPos, 1, true);
     state.progress.checkpointRoom = room.id;
     state.progress.checkpoint.x = startPos.x;
@@ -236,7 +236,7 @@ export function createGame(deps: GameDeps): Game {
     if (state.boss) {
       stepBoss(state.boss, player, room, hazards, t, dt, tuning, rng, state.events);
     }
-    stepHazards(hazards, room.bounds, t, dt);
+    stepHazards(hazards, room.bounds, solids, t, dt);
     resolveCombat(state, room, breakableHp, t, tuning, state.events);
 
     if (state.boss && !state.boss.alive && !state.progress.bossDefeated) {

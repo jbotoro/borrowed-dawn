@@ -148,6 +148,30 @@ describe("rooms", () => {
     expect(countEvents(game.state.events, "pickup")).toBe(1);
   });
 
+  it("raises maximum health with an ember flask and keeps the bonus on respawn", () => {
+    const rooms = makeRooms();
+    const hall = roomById(rooms, "hall");
+    hall.pickups.push({ id: "flask", kind: "emberFlask", x: 12, y: 1.6 });
+    const game = createGame({ tuning, seed: 29, rooms });
+    game.setInput(emptyInput());
+    game.start();
+    game.state.player.health = 1;
+    game.state.player.pos.x = 12;
+    game.state.player.pos.y = 1;
+
+    stepN(game, 2);
+
+    const increasedMaximum = tuning.player.maxHealth + tuning.world.flaskHealthBonus;
+    expect(game.state.progress.maxHealthBonus).toBe(tuning.world.flaskHealthBonus);
+    expect(game.state.player.health).toBe(increasedMaximum);
+
+    game.state.player.health = 0;
+    game.respawn();
+
+    expect(game.state.progress.maxHealthBonus).toBe(tuning.world.flaskHealthBonus);
+    expect(game.state.player.health).toBe(increasedMaximum);
+  });
+
   it("restores health at a checkpoint and emits once per visit", () => {
     const game = newGame();
     game.state.events.length = 0;

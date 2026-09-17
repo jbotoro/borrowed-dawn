@@ -135,6 +135,9 @@ export function collectPickups(state: GameState, tuning: Tuning, events: GameEve
     events.push({ kind: "pickup", x: pickup.pos.x, y: pickup.pos.y });
     if (pickup.kind === "longwick") {
       state.player.longwick = true;
+    } else if (pickup.kind === "emberFlask") {
+      state.progress.maxHealthBonus += tuning.world.flaskHealthBonus;
+      state.player.health = tuning.player.maxHealth + state.progress.maxHealthBonus;
     } else if (pickup.kind === "dawnCore") {
       events.push({ kind: "victory", x: pickup.pos.x, y: pickup.pos.y });
       state.phase = "victory";
@@ -162,7 +165,7 @@ export function touchCheckpoint(
   state.progress.checkpointRoom = room.id;
   state.progress.checkpoint.x = point.x;
   state.progress.checkpoint.y = point.y;
-  state.player.health = tuning.player.maxHealth;
+  state.player.health = tuning.player.maxHealth + state.progress.maxHealthBonus;
   if (!wasTouching) {
     events.push({ kind: "checkpoint", x: point.x, y: point.y });
   }

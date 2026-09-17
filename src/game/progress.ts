@@ -9,7 +9,8 @@ export function createProgress(startRoom: string, startPos: Vec2): Progress {
     opened: [],
     broken: [],
     bossDefeated: false,
-    deaths: 0
+    deaths: 0,
+    maxHealthBonus: 0
   };
 }
 

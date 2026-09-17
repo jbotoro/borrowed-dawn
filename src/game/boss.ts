@@ -298,21 +298,25 @@ export function stepBoss(
       const until = t + cfg.stompWaveLifeMs / 1000;
       spawnHazard(
         hazards,
+        "wave",
         boss.pos.x,
         floorY,
         cfg.stompWaveWidth,
         cfg.stompWaveHeight,
         cfg.stompWaveSpeed,
+        0,
         until,
         cfg.stompDamage
       );
       spawnHazard(
         hazards,
+        "wave",
         boss.pos.x,
         floorY,
         cfg.stompWaveWidth,
         cfg.stompWaveHeight,
         -cfg.stompWaveSpeed,
+        0,
         until,
         cfg.stompDamage
       );

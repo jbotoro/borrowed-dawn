@@ -33,7 +33,13 @@ export function createPlayer(): PlayerState {
   };
 }
 
-export function resetPlayer(player: PlayerState, pos: Vec2, facing: Facing, tuning: Tuning): void {
+export function resetPlayer(
+  player: PlayerState,
+  pos: Vec2,
+  facing: Facing,
+  tuning: Tuning,
+  maxHealthBonus: number
+): void {
   player.pos.x = pos.x;
   player.pos.y = pos.y;
   player.prev.x = pos.x;
@@ -45,7 +51,7 @@ export function resetPlayer(player: PlayerState, pos: Vec2, facing: Facing, tuni
   player.coyoteUntil = 0;
   player.jumpBufferedUntil = 0;
   player.jumpCutApplied = true;
-  player.health = tuning.player.maxHealth;
+  player.health = tuning.player.maxHealth + maxHealthBonus;
   player.invulnerableUntil = 0;
   player.hurtUntil = 0;
   player.dashUntil = 0;

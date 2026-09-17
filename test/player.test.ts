@@ -291,7 +291,7 @@ describe("player reset", () => {
     const s = sim(0, 0);
     s.player.health = 1;
     s.player.attackPhase = "active";
-    resetPlayer(s.player, { x: 5, y: 2 }, -1, tuning);
+    resetPlayer(s.player, { x: 5, y: 2 }, -1, tuning, 0);
     expect(s.player.health).toBe(tuning.player.maxHealth);
     expect(s.player.attackPhase).toBe("none");
     expect(s.player.pos.x).toBe(5);
