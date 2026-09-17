@@ -8,6 +8,7 @@ export interface RoomMesh {
   group: THREE.Group;
   build(room: Room, progress: Progress): void;
   syncGates(progress: Progress): void;
+  setPlayerPos(x: number, y: number): void;
   sync(
     t: number,
     dt: number,
@@ -23,7 +24,10 @@ type Feel = Tuning["feel"];
 
 const MAX_DECOR_LIGHTS = 4;
 const FAR_Z = -6;
-const WARM_TARGETS: Record<string, boolean> = { belfry: true, cache: true };
+const CAP_LIFT = 0.008;
+const CAP_OVERHANG = 0.008;
+const RIM_LIFT = 0.016;
+const WARM_TARGETS: Record<string, boolean> = { belfry: true, cache: true, vault: true };
 const PLATFORM_KINDS: DecorKind[] = ["stair", "gallery", "beam", "bench", "crate", "wall"];
 
 interface Tagged {
@@ -83,6 +87,23 @@ interface Opening {
   rect: Rect;
   side: "left" | "right" | "floor" | "ceiling";
   warm: boolean;
+}
+
+interface FadePart {
+  material: THREE.Material;
+  base: number;
+}
+
+interface Veil {
+  rect: Rect;
+  opacity: number;
+  hide: FadePart[];
+  show: FadePart[];
+  lights: DoorLight[];
+  stone: THREE.Material;
+  stoneDark: THREE.Material;
+  stoneLit: THREE.Material;
+  outline: THREE.Material | null;
 }
 
 function bellProfile(scale: number, shrink: number): THREE.Vector2[] {
@@ -280,6 +301,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   const doorGlows: DoorGlow[] = [];
   const doorLights: DoorLight[] = [];
   const doorPlates: DoorPlate[] = [];
+  const veils: Veil[] = [];
+  let veilByOpening = new Map<Opening, Veil>();
+  let outlineOverride: THREE.Material | null = null;
+  let playerX = 0;
+  let playerY = 0;
   const dawnColor = new THREE.Color(ramp.amber);
   let outlineGeometryCache = new Map<string, THREE.BufferGeometry>();
   let boxGeometryCache = new Map<string, THREE.BufferGeometry>();
@@ -345,7 +371,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     mesh.position.set(x, y, z);
     parent.add(mesh);
     if (outline && outlined) {
-      const shellMat = look.outlineMaterial();
+      const shellMat = outlineOverride === null ? look.outlineMaterial() : outlineOverride;
       if (shellMat !== null) {
         const shell = new THREE.Mesh(outlineGeometry(width, height, depth), shellMat);
         shell.userData.outline = true;
@@ -433,7 +459,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       feel.rimHeight,
       lineDepth,
       rect.x + rect.w * 0.5,
-      rect.y + rect.h - feel.rimHeight * 0.5,
+      rect.y + rect.h + RIM_LIFT - feel.rimHeight * 0.5,
       z + depth * 0.5 - lineDepth * 0.5 + feel.rimOverhang - inset,
       rimMat,
       parent,
@@ -443,7 +469,16 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
 
   function addTop(rect: Rect, depth: number, z: number, parent: THREE.Object3D, material: THREE.Material): void {
     const capH = 0.07;
-    addBox(rect.w, capH, depth - 0.02, rect.x + rect.w * 0.5, rect.y + rect.h - capH * 0.5, z, material, parent);
+    addBox(
+      rect.w + CAP_OVERHANG * 2,
+      capH,
+      depth - 0.02,
+      rect.x + rect.w * 0.5,
+      rect.y + rect.h + CAP_LIFT - capH * 0.5,
+      z,
+      material,
+      parent
+    );
   }
 
   function addPlate(rect: Rect, z: number, parent: THREE.Object3D, feel: Feel): void {
@@ -458,14 +493,14 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     z: number,
     parent: THREE.Object3D,
     feel: Feel,
-    seed: number
+    seed: number,
+    lineMat: THREE.Material = voidMat
   ): void {
     const spacing = Math.max(feel.courseSpacing, 0.3);
     const rows = Math.floor(rect.h / spacing);
     if (rows < 1) return;
     const random = seededRandom(seed);
     const front = z + depth * 0.5 + 0.006;
-    const lineMat = voidMat;
     for (let i = 1; i <= rows; i++) {
       const y = rect.y + i * spacing;
       if (y > rect.y + rect.h - 0.05) break;
@@ -533,6 +568,9 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     doorGlows.length = 0;
     doorLights.length = 0;
     doorPlates.length = 0;
+    veils.length = 0;
+    veilByOpening = new Map();
+    outlineOverride = null;
     sealedOpenings = new Set();
   }
 
@@ -825,10 +863,10 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     for (const plate of list) {
       if (far) {
         addRect(plate, depth, z, farMat, group);
-        addBox(plate.w, 0.06, depth, plate.x + plate.w * 0.5, plate.y + plate.h - 0.03, z, farLitMat, group);
+        addBox(plate.w, 0.06, depth, plate.x + plate.w * 0.5, plate.y + plate.h + CAP_LIFT - 0.03, z, farLitMat, group);
       } else {
         addPlate(plate, z, group, feel);
-        addBox(plate.w, 0.1, 0.12, plate.x + plate.w * 0.5, plate.y + 0.05, z + depth * 0.5 - 0.06, ironDarkMat, group, true);
+        addBox(plate.w, 0.1, 0.12, plate.x + plate.w * 0.5, plate.y + 0.05 - CAP_LIFT, z + depth * 0.5 - 0.06 + CAP_LIFT, ironDarkMat, group, true);
       }
 
       const top = plate.y + plate.h;
@@ -883,8 +921,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       addBox(beam.w, beam.h * 0.2, depth, cx, beam.y + beam.h * 0.9, z, far ? farLitMat : ironMat, group, !far);
     }
     if (!far) {
-      addPlateWithRivets(0.22, beam.h * 1.06, depth * 1.05, beam.x + 0.11, cy, z, group, ironMat);
-      addPlateWithRivets(0.22, beam.h * 1.06, depth * 1.05, beam.x + beam.w - 0.11, cy, z, group, ironMat);
+      addPlateWithRivets(0.22, beam.h * 1.06, depth * 1.05, beam.x + 0.11 - CAP_LIFT, cy, z, group, ironMat);
+      addPlateWithRivets(0.22, beam.h * 1.06, depth * 1.05, beam.x + beam.w - 0.11 + CAP_LIFT, cy, z, group, ironMat);
     }
 
     const hangSpan = decor.rect.y + decor.rect.h - (beam.y + beam.h);
@@ -996,6 +1034,120 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     }
   }
 
+  function fading(material: THREE.Material, opacity: number): THREE.Material {
+    material.transparent = true;
+    material.depthWrite = false;
+    material.opacity = opacity;
+    material.visible = opacity > 0.004;
+    material.needsUpdate = true;
+    return material;
+  }
+
+  function boundaryUnder(rect: Rect, room: Room): Rect | null {
+    const b = room.bounds;
+    for (const solid of room.solids) {
+      const isBoundary =
+        solid.x + solid.w <= b.x + 0.01 ||
+        solid.x >= b.x + b.w - 0.01 ||
+        solid.y + solid.h <= b.y + 0.01 ||
+        solid.y >= b.y + b.h - 0.01;
+      if (!isBoundary) continue;
+      if (rectsTouch(rect, solid, 0.05)) return solid;
+    }
+    return null;
+  }
+
+  function addVeil(decor: Decor, feel: Feel): void {
+    const room = currentRoom;
+    if (room === null) return;
+    const rect = decor.rect;
+    const depth = feel.solidDepth;
+    const rest = Math.max(feel.veilRestOpacity, 0);
+    const z = decor.z + 0.02;
+
+    const face = fading(transient(look.material("backgroundNear")), rest);
+    const lineMat = fading(
+      transient(new THREE.MeshBasicMaterial({ color: ramp.void, fog: false })),
+      rest
+    );
+    const pilasterMat = fading(transient(look.material("architecture", { shade: 0.74 })), rest);
+    const hideOutline = outlined
+      ? fading(
+          transient(
+            new THREE.MeshBasicMaterial({ color: ramp.void, side: THREE.BackSide, fog: false })
+          ),
+          rest
+        )
+      : null;
+    const showOutline = outlined
+      ? fading(
+          transient(
+            new THREE.MeshBasicMaterial({ color: ramp.void, side: THREE.BackSide, fog: false })
+          ),
+          0
+        )
+      : null;
+
+    const veil: Veil = {
+      rect,
+      opacity: rest,
+      hide: [
+        { material: face, base: 1 },
+        { material: lineMat, base: 1 },
+        { material: pilasterMat, base: 1 }
+      ],
+      show: [],
+      lights: [],
+      stone: fading(transient(look.material("architecture")), 0),
+      stoneDark: fading(transient(look.material("architecture", { shade: 0.74 })), 0),
+      stoneLit: fading(transient(look.material("architecture", { shade: 1.12 })), 0),
+      outline: showOutline
+    };
+    if (hideOutline !== null) veil.hide.push({ material: hideOutline, base: 1 });
+    veil.show.push({ material: veil.stone, base: 1 });
+    veil.show.push({ material: veil.stoneDark, base: 1 });
+    veil.show.push({ material: veil.stoneLit, base: 1 });
+    if (showOutline !== null) veil.show.push({ material: showOutline, base: 1 });
+    veils.push(veil);
+    for (const opening of currentOpenings) {
+      if (rectsTouch(opening.rect, rect, 0.2)) veilByOpening.set(opening, veil);
+    }
+
+    outlineOverride = hideOutline;
+    addRect(rect, depth, z, face, group, true);
+
+    const wall = boundaryUnder(rect, room);
+    const strip: Rect =
+      wall === null ? rect : { x: wall.x, y: rect.y, w: wall.w, h: rect.h };
+    addCourses(strip, depth, z, group, feel, strip.x + strip.y, lineMat);
+
+    const front = z + depth * 0.5 + 0.007;
+    const tellY = rect.y + Math.min(Math.max(feel.courseSpacing, 0.3) * 0.5, rect.h * 0.3);
+    addBox(strip.w * 0.44, 0.05, 0.014, strip.x + strip.w * 0.24, tellY, front, lineMat, group);
+
+    if (wall !== null) {
+      const b = room.bounds;
+      const rightWall = wall.x >= b.x + b.w - 0.01;
+      const leftWall = wall.x + wall.w <= b.x + 0.01;
+      if (rightWall || leftWall) {
+        const innerX = rightWall ? wall.x : wall.x + wall.w;
+        const dir = rightWall ? 1 : -1;
+        addBox(
+          0.5,
+          rect.h,
+          depth + 0.24,
+          innerX + dir * 0.25,
+          rect.y + rect.h * 0.5,
+          z,
+          pilasterMat,
+          group,
+          true
+        );
+      }
+    }
+    outlineOverride = null;
+  }
+
   function addRubble(decor: Decor, feel: Feel): void {
     const rect = decor.rect;
     const z = decor.z;
@@ -1024,7 +1176,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       holder.rotation.z = (random() - 0.5) * 0.9;
       group.add(holder);
       addBox(0.9, 0.24, depth * 0.5, 0, 0, 0, faceMat, holder, true);
-      addBox(0.94, feel.rimHeight, depth * 0.54, 0, 0.12 - feel.rimHeight * 0.5, 0, rimMat, holder, true);
+      addBox(0.94, feel.rimHeight, depth * 0.54, 0, 0.12 + RIM_LIFT - feel.rimHeight * 0.5, 0, rimMat, holder, true);
     }
     const bar = addBar(rect.x + rect.w * 0.2, rect.y + 0.2, rect.x + rect.w * 0.6, rect.y + rect.h * 1.3, 0.22, 0.2, z - 0.4, ironDarkMat, group, true);
     bar.rotation.z += 0.05;
@@ -1487,6 +1639,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     geometry.setDrawRange(0, base);
     const points = new THREE.Points(geometry, emberMat);
     points.frustumCulled = false;
+    points.layers.set(look.actorLayer);
     group.add(points);
     embers = { points, attribute, seed, originX, minY, spanY, count, base, drawn: base };
   }
@@ -1566,6 +1719,9 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
         return;
       case "wall":
         addWall(decor, solids, feel);
+        return;
+      case "veil":
+        addVeil(decor, feel);
         return;
       case "rubble":
         addRubble(decor, feel);
@@ -1672,28 +1828,49 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     ceilingMesh.position.set(cx, rect.y + rect.h - 0.02, 0);
     group.add(ceilingMesh);
 
-    const sill = addBox(rect.w + 0.4, 0.07, depth + 0.16, cx - dir * 0.2, rect.y + 0.035, 0, stoneLitMat, group, true);
+    const veil = veilByOpening.get(opening);
+    const frameStone = veil === undefined ? stoneMat : veil.stone;
+    const frameDark = veil === undefined ? stoneDarkMat : veil.stoneDark;
+    const frameLit = veil === undefined ? stoneLitMat : veil.stoneLit;
+    if (veil !== undefined) outlineOverride = veil.outline;
+
+    const sill = addBox(rect.w + 0.4, 0.07, depth + 0.16, cx - dir * 0.2, rect.y + 0.035, 0, frameLit, group, true);
     sill.renderOrder = 1;
 
     const jambW = 0.42;
-    addBox(jambW, rect.h + 0.05, depth + 0.16, innerX + dir * jambW * 0.5, cy, 0, stoneMat, group, true);
-    addBox(jambW * 0.7, rect.h + 0.05, depth + 0.1, outerX - dir * jambW * 0.35, cy, 0, stoneDarkMat, group, true);
+    addBox(jambW, rect.h + 0.05, depth + 0.16, innerX + dir * jambW * 0.5, cy, 0, frameStone, group, true);
+    addBox(jambW * 0.7, rect.h + 0.05, depth + 0.1, outerX - dir * jambW * 0.35, cy, 0, frameDark, group, true);
 
     if (arched) {
       const radius = rect.w * 0.5;
-      addArchStones(cx, rect.y + rect.h - 0.02, radius, 0.5, depth + 0.16, 0, stoneMat, group);
-      addBox(rect.w + 1.2, 0.36, depth + 0.16, cx, rect.y + rect.h + radius + 0.62, 0, stoneDarkMat, group, true);
+      addArchStones(cx, rect.y + rect.h - 0.02, radius, 0.5, depth + 0.16, 0, frameStone, group);
+      addBox(rect.w + 1.2, 0.36, depth + 0.16, cx, rect.y + rect.h + radius + 0.62, 0, frameDark, group, true);
     } else {
-      addBox(rect.w + jambW * 1.6, 0.62, depth + 0.16, cx, rect.y + rect.h + 0.31, 0, stoneMat, group, true);
-      addBox(0.7, 0.72, depth + 0.22, cx, rect.y + rect.h + 0.36, 0, stoneLitMat, group, true);
-      addBox(rect.w + jambW * 2.2, 0.22, depth + 0.1, cx, rect.y + rect.h + 0.73, 0, stoneDarkMat, group, true);
+      addBox(rect.w + jambW * 1.6, 0.62, depth + 0.16, cx, rect.y + rect.h + 0.31, 0, frameStone, group, true);
+      addBox(0.7, 0.72, depth + 0.22, cx, rect.y + rect.h + 0.36, 0, frameLit, group, true);
+      addBox(rect.w + jambW * 2.2, 0.22, depth + 0.1, cx, rect.y + rect.h + 0.73, 0, frameDark, group, true);
     }
+    outlineOverride = null;
 
     const spill = addFloorSpill(innerX, rect.y, Math.min(rect.w * 2.1, depth - 0.1), feel.passageSpillLength, -dir, glowHex, feel.passageSpillOpacity * 0.9);
     const wallGlow = addWallGlow(cx - dir * 0.2, cy, rect.w * 1.6, rect.h * 1.15, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * (opening.warm ? 0.9 : 0.6));
     let passageLight: THREE.PointLight | null = null;
     if (feel.passageLightIntensity > 0 && opening.warm) {
       passageLight = addFlameLight(hex, feel.passageLightIntensity, feel.passageLightDistance, innerX - dir * 0.2, cy, 0.4);
+    }
+    if (veil !== undefined) {
+      const spillMat = spill.material as THREE.MeshBasicMaterial;
+      const glowMat = wallGlow.material as THREE.MeshBasicMaterial;
+      veil.show.push({ material: spillMat, base: spillMat.opacity });
+      veil.show.push({ material: glowMat, base: glowMat.opacity });
+      spillMat.opacity = 0;
+      spillMat.visible = false;
+      glowMat.opacity = 0;
+      glowMat.visible = false;
+      if (passageLight !== null) {
+        veil.lights.push({ light: passageLight, intensity: passageLight.intensity });
+        passageLight.intensity = 0;
+      }
     }
     if (sealedOpenings.has(opening)) {
       registerDoorGlow(spill);
@@ -2047,6 +2224,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
 
     syncGates,
 
+    setPlayerPos(x: number, y: number): void {
+      playerX = x;
+      playerY = y;
+    },
+
     sync(
       t: number,
       dt: number,
@@ -2073,6 +2255,32 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
         entry.material.emissive.copy(entry.emissive).lerp(dawnColor, lift);
         entry.material.emissiveIntensity = lift * 0.9;
       }
+      if (veils.length > 0) {
+        const rest = Math.max(feel.veilRestOpacity, 0);
+        const radius = Math.max(feel.veilRevealRadius, 0);
+        const step = Math.max(feel.veilFadePerSec, 0) * dt;
+        for (const veil of veils) {
+          const r = veil.rect;
+          const nx = Math.min(Math.max(playerX, r.x), r.x + r.w);
+          const ny = Math.min(Math.max(playerY, r.y), r.y + r.h);
+          const near = Math.hypot(playerX - nx, playerY - ny) <= radius;
+          const target = near ? 0 : rest;
+          const delta = target - veil.opacity;
+          veil.opacity += Math.abs(delta) <= step ? delta : Math.sign(delta) * step;
+          const hidden = veil.opacity;
+          const shown = rest <= 0 ? 1 : 1 - veil.opacity / rest;
+          for (const part of veil.hide) {
+            part.material.opacity = part.base * hidden;
+            part.material.visible = part.material.opacity > 0.004;
+          }
+          for (const part of veil.show) {
+            part.material.opacity = part.base * shown;
+            part.material.visible = part.material.opacity > 0.004;
+          }
+          for (const entry of veil.lights) entry.light.intensity = entry.intensity * shown;
+        }
+      }
+
       const flicker =
         1 + (Math.sin(t * feel.flickerSpeed) * 0.6 + Math.sin(t * feel.flickerSpeed * 2.37) * 0.4) * feel.flickerAmount;
 

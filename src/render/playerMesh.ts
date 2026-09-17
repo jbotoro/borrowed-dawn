@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Tuning } from "../tuning";
 import type { PlayerState } from "../game/types";
 import type { LookProfile } from "./look";
-import { applyOutline } from "./look";
+import { applyOutline, registerActorLight } from "./look";
 
 export interface PlayerMesh {
   group: THREE.Group;
@@ -29,7 +29,121 @@ const SHIN_LEN = 0.2;
 const UPPER_LEN = 0.17;
 const FORE_LEN = 0.16;
 
+const DIMPLE_SHADE = 0.52;
+const BUCKLE_RADIUS = 0.019;
+const HOOD_POINT_SWING = 1.35;
+const HOOD_POINT_X = -0.035;
+const HOOD_POINT_Y = 1.18;
+const SATCHEL_X = -0.208;
+const SATCHEL_Y = 0.515;
+
 const WHITE = new THREE.Color(0xffffff);
+
+const LAMP_Z = -0.16;
+const BEAM_Z = 0.15;
+const BEAM_SPLAY = 0.45;
+const HALO_SIZE = 64;
+const POOL_SIZE = 64;
+const BEAM_SIZE = 64;
+const POOL_ASPECT = 0.32;
+const BEAM_WIDTH_RATIO = 0.62;
+const BEAM_TOP_RATIO = 0.26;
+const GROUND_FADE_PER_SEC = 9;
+
+function haloTexture(): THREE.Texture | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = HALO_SIZE;
+  canvas.height = HALO_SIZE;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return null;
+  const half = HALO_SIZE * 0.5;
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.18, "rgba(255,255,255,0.62)");
+  grad.addColorStop(0.45, "rgba(255,255,255,0.22)");
+  grad.addColorStop(0.75, "rgba(255,255,255,0.05)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, HALO_SIZE, HALO_SIZE);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function poolTexture(): THREE.Texture | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = POOL_SIZE;
+  canvas.height = POOL_SIZE;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return null;
+  const image = ctx.createImageData(POOL_SIZE, POOL_SIZE);
+  const data = image.data;
+  for (let y = 0; y < POOL_SIZE; y++) {
+    const dy = (y / (POOL_SIZE - 1) - 0.5) * 2;
+    for (let x = 0; x < POOL_SIZE; x++) {
+      const dx = (x / (POOL_SIZE - 1) - 0.5) * 2;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      const alpha = r >= 1 ? 0 : Math.pow(1 - r * r, 1.2);
+      const i = (y * POOL_SIZE + x) * 4;
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = Math.round(clamp01(alpha) * 255);
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function beamTexture(): THREE.Texture | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = BEAM_SIZE;
+  canvas.height = BEAM_SIZE;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return null;
+  const image = ctx.createImageData(BEAM_SIZE, BEAM_SIZE);
+  const data = image.data;
+  for (let y = 0; y < BEAM_SIZE; y++) {
+    const v = y / (BEAM_SIZE - 1);
+    const splay = v >= BEAM_SPLAY ? 1 : v / BEAM_SPLAY;
+    const halfWidth = BEAM_TOP_RATIO + (1 - BEAM_TOP_RATIO) * splay;
+    const fall = 1 - v * v;
+    for (let x = 0; x < BEAM_SIZE; x++) {
+      const u = (x / (BEAM_SIZE - 1) - 0.5) * 2;
+      const edge = 1 - Math.abs(u) / halfWidth;
+      const across = edge <= 0 ? 0 : edge * edge;
+      const alpha = clamp01(across * fall);
+      const i = (y * BEAM_SIZE + x) * 4;
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = Math.round(alpha * 255);
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function glowPlane(map: THREE.Texture | null, hex: number): THREE.Mesh {
+  const material = new THREE.MeshBasicMaterial({
+    color: hex,
+    map,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    fog: false
+  });
+  return new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+}
 
 const TORSO: Point[] = [
   [-0.09, 0.0],
@@ -45,10 +159,10 @@ const TORSO: Point[] = [
 ];
 
 const COLLAR: Point[] = [
-  [-0.2, 0.4],
-  [0.2, 0.4],
-  [0.23, 0.45],
-  [-0.19, 0.45]
+  [-0.185, 0.402],
+  [0.196, 0.402],
+  [0.222, 0.44],
+  [-0.176, 0.44]
 ];
 
 const CAPE: Point[] = [
@@ -60,16 +174,45 @@ const CAPE: Point[] = [
   [0.19, 0.0],
   [0.14, -0.08],
   [0.18, -0.22],
-  [0.2, -0.4],
-  [0.18, -0.58],
-  [0.1, -0.65],
-  [0.02, -0.56],
-  [-0.08, -0.67],
-  [-0.18, -0.58],
-  [-0.26, -0.44],
+  [0.2, -0.42],
+  [0.172, -0.62],
+  [0.13, -0.5],
+  [0.075, -0.71],
+  [0.015, -0.53],
+  [-0.055, -0.74],
+  [-0.125, -0.55],
+  [-0.2, -0.7],
+  [-0.255, -0.48],
   [-0.3, -0.26],
   [-0.27, -0.08],
   [-0.22, 0.0]
+];
+
+const HOOD_POINT: Point[] = [
+  [0.075, 0.045],
+  [0.0, 0.065],
+  [-0.115, 0.03],
+  [-0.245, -0.035],
+  [-0.355, -0.135],
+  [-0.4, -0.215],
+  [-0.325, -0.175],
+  [-0.215, -0.108],
+  [-0.095, -0.055],
+  [0.02, -0.03],
+  [0.075, -0.02]
+];
+
+const SATCHEL: Point[] = [
+  [0.045, 0.078],
+  [-0.178, 0.078],
+  [-0.178, 0.012],
+  [-0.152, 0.012],
+  [-0.152, -0.118],
+  [-0.126, -0.142],
+  [0.0, -0.142],
+  [0.025, -0.118],
+  [0.025, 0.012],
+  [0.045, 0.012]
 ];
 
 const HEAD: Point[] = [
@@ -81,6 +224,19 @@ const HEAD: Point[] = [
   [0.15, 0.13],
   [0.12, 0.05],
   [0.07, 0.01]
+];
+
+const HOOD_RIM: Point[] = [
+  [0.079, 0.198],
+  [0.127, 0.166],
+  [0.152, 0.13],
+  [0.121, 0.048],
+  [0.07, 0.008],
+  [0.068, 0.026],
+  [0.107, 0.056],
+  [0.136, 0.128],
+  [0.113, 0.157],
+  [0.073, 0.182]
 ];
 
 const THIGH: Point[] = [
@@ -264,7 +420,10 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
 
   const slateMat = look.material("actorCoat", { unlit: true }) as THREE.MeshBasicMaterial;
   const charcoalMat = look.material("bossShell", { unlit: true }) as THREE.MeshBasicMaterial;
-  const ashMat = look.material("ash", { unlit: true }) as THREE.MeshBasicMaterial;
+  const dimpleMat = look.material("actorCoat", {
+    unlit: true,
+    shade: DIMPLE_SHADE
+  }) as THREE.MeshBasicMaterial;
   const porcelainMat = look.material("actorMetal", { unlit: true }) as THREE.MeshBasicMaterial;
   const voidMat = look.material("void", { unlit: true, fog: false }) as THREE.MeshBasicMaterial;
   const glassMat = look.material("actorGlass", { unlit: true }) as THREE.MeshBasicMaterial;
@@ -272,7 +431,7 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
 
   const slateBase = new THREE.Color(slateMat.color);
   const charcoalBase = new THREE.Color(charcoalMat.color);
-  const ashBase = new THREE.Color(ashMat.color);
+  const dimpleBase = new THREE.Color(dimpleMat.color);
   const porcelainBase = new THREE.Color(porcelainMat.color);
   const glassBase = new THREE.Color(glassMat.color);
   const flameBase = new THREE.Color(flameMat.color);
@@ -281,10 +440,12 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
 
   const pinGeometry = new THREE.CircleGeometry(tuning.feel.actorPinRadius, 12);
   function pin(x: number, y: number, z: number): THREE.Mesh {
-    const mesh = new THREE.Mesh(pinGeometry, porcelainMat);
+    const mesh = new THREE.Mesh(pinGeometry, dimpleMat);
     mesh.position.set(x, y, z);
     return mesh;
   }
+
+  const buckleGeometry = new THREE.CircleGeometry(BUCKLE_RADIUS, 10);
 
   const rig = new THREE.Group();
   group.add(rig);
@@ -298,6 +459,19 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
   torso.add(capePivot);
   const cape = plate(CAPE, charcoalMat, depth);
   capePivot.add(cape);
+
+  const hoodPivot = new THREE.Object3D();
+  hoodPivot.position.set(HOOD_POINT_X, HOOD_POINT_Y - HIP_Y, zCape - step * 0.4);
+  torso.add(hoodPivot);
+  hoodPivot.add(plate(HOOD_POINT, charcoalMat, depth));
+
+  const satchel = new THREE.Object3D();
+  satchel.position.set(SATCHEL_X, SATCHEL_Y - HIP_Y, zFar);
+  torso.add(satchel);
+  satchel.add(plate(SATCHEL, slateMat, depth));
+  const buckle = new THREE.Mesh(buckleGeometry, porcelainMat);
+  buckle.position.set(-0.066, 0.004, depth * 0.6);
+  satchel.add(buckle);
 
   const torsoPlate = plate(TORSO, slateMat, depth);
   torsoPlate.position.z = zBody;
@@ -313,9 +487,13 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
   torso.add(head);
 
   const faceHole = ellipsePath(0.042, 0.115, 0.031, 0.058);
-  const headPlate = plate(HEAD, ashMat, depth, [faceHole]);
+  const headPlate = plate(HEAD, slateMat, depth, [faceHole]);
   headPlate.position.z = zBody;
   head.add(headPlate);
+
+  const hoodRim = plate(HOOD_RIM, porcelainMat, depth * 0.8);
+  hoodRim.position.z = zNear;
+  head.add(hoodRim);
 
   const faceVoid = plate(
     [
@@ -347,17 +525,16 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
     knee.position.set(0, -THIGH_LEN, 0);
     hip.add(knee);
     knee.add(plate(SHIN, material, depth));
-    knee.add(pin(0, 0, depth * 0.6));
 
     const boot = new THREE.Object3D();
     boot.position.set(0, -SHIN_LEN, 0);
     knee.add(boot);
-    boot.add(plate(BOOT, material, depth));
+    boot.add(plate(BOOT, slateMat, depth));
     return { hip, knee, boot };
   }
 
-  const legBack = buildLeg(-0.05, zFar, slateMat);
-  const legLead = buildLeg(0.05, zNear, ashMat);
+  const legBack = buildLeg(-0.05, zFar, charcoalMat);
+  const legLead = buildLeg(0.05, zNear, slateMat);
 
   function buildArm(x: number, z: number, material: THREE.MeshBasicMaterial): {
     shoulder: THREE.Object3D;
@@ -374,7 +551,6 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
     elbow.position.set(0, -UPPER_LEN, 0);
     shoulder.add(elbow);
     elbow.add(plate(FOREARM, material, depth));
-    elbow.add(pin(0, 0, depth * 0.6));
 
     const hand = new THREE.Object3D();
     hand.position.set(0, -FORE_LEN, 0);
@@ -382,7 +558,7 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
     return { shoulder, elbow, hand };
   }
 
-  const armOffParts = buildArm(-0.04, zFar, slateMat);
+  const armOffParts = buildArm(-0.04, zFar, charcoalMat);
   const armOff = armOffParts.shoulder;
   const elbowOff = armOffParts.elbow;
   armOff.rotation.z = 0.15;
@@ -420,8 +596,9 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
   );
   lanternLight.position.set(0, -0.085, 2 * step);
   lantern.add(lanternLight);
+  registerActorLight(lanternLight);
 
-  const armLeadParts = buildArm(0.02, zNear, ashMat);
+  const armLeadParts = buildArm(0.02, zNear, slateMat);
   const armLead = armLeadParts.shoulder;
   const elbowLead = armLeadParts.elbow;
 
@@ -429,17 +606,17 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
   weapon.position.set(0, 0, zProp - zNear);
   armLeadParts.hand.add(weapon);
 
-  const ferrule = plate(FERRULE, porcelainMat, depth);
+  const ferrule = plate(FERRULE, slateMat, depth);
   weapon.add(ferrule);
 
-  const eye = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.008, 4, 10), porcelainMat);
+  const eye = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.008, 4, 10), slateMat);
   eye.position.set(-0.058, 0, 0);
   weapon.add(eye);
 
   const needleScale = new THREE.Object3D();
   needleScale.position.set(0.03, 0, 0);
   weapon.add(needleScale);
-  needleScale.add(plate(NEEDLE, ashMat, depth * 0.7));
+  needleScale.add(plate(NEEDLE, slateMat, depth * 0.7));
   needleScale.add(plate(NEEDLE_TIP, porcelainMat, depth * 0.72));
 
   group.traverse((node) => {
@@ -447,6 +624,27 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
     if (mesh.isMesh === true) mesh.layers.set(look.actorLayer);
   });
   applyOutline(group, tuning.feel.outlineThickness, look);
+
+  const lamp = new THREE.Group();
+  lamp.name = "lanternLight";
+  group.add(lamp);
+
+  const amber = look.colorOf("reward");
+  const halo = glowPlane(haloTexture(), amber);
+  const beam = glowPlane(beamTexture(), amber);
+  const pool = glowPlane(poolTexture(), amber);
+  lamp.add(beam);
+  lamp.add(pool);
+  lamp.add(halo);
+  for (const mesh of [halo, beam, pool]) {
+    mesh.layers.set(look.actorLayer);
+    mesh.renderOrder = 2;
+  }
+  const haloMat = halo.material as THREE.MeshBasicMaterial;
+  const beamMat = beam.material as THREE.MeshBasicMaterial;
+  const poolMat = pool.material as THREE.MeshBasicMaterial;
+  const lampWorld = new THREE.Vector3();
+  let groundFade = 1;
 
   let squashY = 1;
   let lastGrounded = true;
@@ -646,6 +844,7 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
       hemVel *= Math.max(0, 1 - hemK * 0.62 * dt);
       hemAngle += hemVel * dt;
       capePivot.rotation.z = hemAngle;
+      hoodPivot.rotation.z = hemAngle * HOOD_POINT_SWING;
 
       const airFlare = player.grounded || dying ? 0 : feel.courierHemFlareAir;
       const flare = dashing ? feel.courierHemFlareAir * 1.5 : airFlare;
@@ -765,8 +964,8 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
       slateMat.color.copy(tint);
       tint.copy(charcoalBase).lerp(porcelainBase, lift).lerp(voidColor, bodyTint);
       charcoalMat.color.copy(tint);
-      tint.copy(ashBase).lerp(voidColor, bodyTint);
-      ashMat.color.copy(tint);
+      tint.copy(dimpleBase).lerp(porcelainBase, lift).lerp(voidColor, bodyTint);
+      dimpleMat.color.copy(tint);
       tint.copy(porcelainBase).lerp(voidColor, bodyTint);
       porcelainMat.color.copy(tint);
 
@@ -774,6 +973,44 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
       flame.position.y = flameRestY - (1 - lampScale) * 0.02;
       lanternLight.intensity = lampIntensity;
       lanternLight.distance = feel.playerLightDistance;
+
+      const groundTarget = player.grounded && !dying ? 1 : 0;
+      groundFade += (groundTarget - groundFade) * Math.min(1, GROUND_FADE_PER_SEC * dt);
+
+      const glow = clamp01(lampIntensity / Math.max(feel.playerLightIntensity, 0.0001));
+      const groupScaleX = scaleXZ * player.facing;
+      lamp.scale.set(
+        1 / (groupScaleX === 0 ? 1 : groupScaleX),
+        1 / Math.max(scaleY, 0.0001),
+        1
+      );
+
+      lanternLight.updateWorldMatrix(true, false);
+      lampWorld.setFromMatrixPosition(lanternLight.matrixWorld);
+      const lampX = lampWorld.x - group.position.x;
+      const lampY = lampWorld.y - group.position.y;
+
+      const haloSize = Math.max(feel.lanternHaloRadius, 0) * 2;
+      halo.position.set(lampX, lampY, LAMP_Z);
+      halo.scale.set(haloSize, haloSize, 1);
+      const haloOpacity = Math.max(feel.lanternHaloOpacity, 0) * glow;
+      haloMat.opacity = haloOpacity;
+      halo.visible = haloOpacity > 0.002;
+
+      const beamLength = Math.max(feel.lanternBeamLength, 0);
+      beam.position.set(lampX, lampY - beamLength * 0.5, BEAM_Z);
+      beam.scale.set(beamLength * BEAM_WIDTH_RATIO, beamLength, 1);
+      const beamOpacity = Math.max(feel.lanternBeamOpacity, 0) * glow * groundFade;
+      beamMat.opacity = beamOpacity;
+      beam.visible = beamOpacity > 0.002;
+
+      const poolWidth = Math.max(feel.lanternPoolWidth, 0);
+      const poolHeight = poolWidth * POOL_ASPECT;
+      pool.position.set(lampX * 0.35, 0, LAMP_Z);
+      pool.scale.set(poolWidth, poolHeight, 1);
+      const poolOpacity = Math.max(feel.lanternPoolOpacity, 0) * glow * groundFade;
+      poolMat.opacity = poolOpacity;
+      pool.visible = poolOpacity > 0.002;
     }
   };
 }

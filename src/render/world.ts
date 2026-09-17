@@ -310,6 +310,7 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
       applyAmbience(dt, live, state.phase === "victory", dawn);
 
       room.syncGates(state.progress);
+      room.setPlayerPos(state.player.pos.x, state.player.pos.y);
       room.sync(renderTime, dt, live, furnaceBoost, emberBoost, doorGlow);
       const shown = posedForTitle(state, currentRoom);
       player.sync(shown, alpha, simTime, renderTime, live);

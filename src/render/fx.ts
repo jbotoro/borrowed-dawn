@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Tuning } from "../tuning";
 import type { GameEvent, GameState, PlayerState, Room, Vec2 } from "../game/types";
 import type { LookProfile } from "./look";
+import { ACTOR_LAYER, registerActorLight } from "./look";
 import { lampAnchor } from "./roomMesh";
 
 export interface Fx {
@@ -25,6 +26,7 @@ const CHEVRON_SLOTS = 10;
 const PUFF_SLOTS = 14;
 const LIFT_SLOTS = 12;
 const PICKUP_SLOTS = 4;
+const EMBER_TAIL = 3;
 const MARK_THICKNESS = 0.055;
 const FX_Z = 0.35;
 const BEHIND_Z = -0.25;
@@ -57,6 +59,12 @@ interface Ridge {
   group: THREE.Group;
   crest: THREE.Mesh;
   core: THREE.Mesh;
+}
+
+interface EmberView {
+  group: THREE.Group;
+  head: THREE.Mesh;
+  tail: THREE.Mesh[];
 }
 
 function clamp01(value: number): number {
@@ -169,6 +177,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       mesh.visible = false;
       mesh.position.z = renderZ;
       mesh.frustumCulled = false;
+      mesh.layers.set(ACTOR_LAYER);
       group.add(mesh);
       pool.push({
         mesh,
@@ -244,11 +253,13 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
     holder.visible = false;
     const fillMaterial = flatMaterial(role, fillOpacity);
     const fill = new THREE.Mesh(plane, fillMaterial);
+    fill.layers.set(ACTOR_LAYER);
     holder.add(fill);
     const edgeMaterial = flatMaterial(role, 1);
     const edges: THREE.Mesh[] = [];
     for (let i = 0; i < 4; i++) {
       const edge = new THREE.Mesh(plane, edgeMaterial);
+      edge.layers.set(ACTOR_LAYER);
       holder.add(edge);
       edges.push(edge);
     }
@@ -314,6 +325,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
   const arc = new THREE.Mesh(arcGeometry, arcMaterial);
   arc.visible = false;
   arc.frustumCulled = false;
+  arc.layers.set(ACTOR_LAYER);
   group.add(arc);
 
   const bursts = createSprites(BURST_SLOTS, star, "actorMetal", 1, FX_Z);
@@ -348,12 +360,42 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
     holder.visible = false;
     const crest = new THREE.Mesh(ridge, ridgeCrestMaterial);
     crest.position.z = 0;
+    crest.layers.set(ACTOR_LAYER);
     holder.add(crest);
     const core = new THREE.Mesh(ridge, ridgeCoreMaterial);
     core.position.z = 0.02;
+    core.layers.set(ACTOR_LAYER);
     holder.add(core);
     group.add(holder);
     ridges.push({ group: holder, crest, core });
+  }
+
+  const emberHeadMaterial = flatMaterial("reward", 1);
+  const emberTailMaterials: THREE.MeshBasicMaterial[] = [];
+  for (let i = 0; i < EMBER_TAIL; i++) {
+    emberTailMaterials.push(flatMaterial("reward", 0.5 - i * 0.14, 0.92 - i * 0.18));
+  }
+
+  const embers: EmberView[] = [];
+  for (let i = 0; i < hazardSlots; i++) {
+    const holder = new THREE.Group();
+    holder.visible = false;
+    const tail: THREE.Mesh[] = [];
+    for (let k = EMBER_TAIL - 1; k >= 0; k--) {
+      const material = emberTailMaterials[k];
+      if (material === undefined) continue;
+      const mesh = new THREE.Mesh(diamond, material);
+      mesh.frustumCulled = false;
+      mesh.layers.set(ACTOR_LAYER);
+      holder.add(mesh);
+      tail[k] = mesh;
+    }
+    const head = new THREE.Mesh(diamond, emberHeadMaterial);
+    head.frustumCulled = false;
+    head.layers.set(ACTOR_LAYER);
+    holder.add(head);
+    group.add(holder);
+    embers.push({ group: holder, head, tail });
   }
 
   interface PickupView {
@@ -368,9 +410,11 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
     const holder = new THREE.Group();
     holder.visible = false;
     const mesh = new THREE.Mesh(diamond, pickupMaterial);
+    mesh.layers.set(ACTOR_LAYER);
     holder.add(mesh);
     const light = new THREE.PointLight(look.colorOf("reward"), 0, 5, 2);
     light.layers.enableAll();
+    registerActorLight(light);
     holder.add(light);
     group.add(holder);
     pickups.push({ group: holder, mesh, light });
@@ -379,9 +423,11 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
   const flameMaterial = flatMaterial("reward", 1);
   const flame = new THREE.Mesh(diamond, flameMaterial);
   flame.visible = false;
+  flame.layers.set(ACTOR_LAYER);
   group.add(flame);
   const flameLight = new THREE.PointLight(look.colorOf("reward"), 0, 6, 2);
   flameLight.layers.enableAll();
+  registerActorLight(flameLight);
   flameLight.visible = false;
   group.add(flameLight);
 
@@ -591,6 +637,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       for (const enemy of state.enemies) {
         if (markIndex >= MARK_SLOTS) break;
         if (!enemy.alive || enemy.state !== "telegraph") continue;
+        if (enemy.kind === "lamplighter") continue;
         const mark = enemyMarks[markIndex];
         if (mark === undefined) break;
         markIndex++;
@@ -664,21 +711,52 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       }
 
       let ridgeIndex = 0;
+      let emberIndex = 0;
       for (let i = 0; i < state.hazards.length; i++) {
         const hazard = state.hazards[i];
         if (hazard === undefined) continue;
         const wasSeen = hazardSeen[i] === true;
-        if (hazard.alive && !wasSeen) {
+        if (hazard.alive && !wasSeen && hazard.kind !== "ember") {
           spawnPuffs(hazard.pos.x, hazard.pos.y, t, live, 0.6);
         }
         hazardSeen[i] = hazard.alive;
         if (!hazard.alive) continue;
+        const hx = hazard.prev.x + (hazard.pos.x - hazard.prev.x) * alpha;
+        const hy = hazard.prev.y + (hazard.pos.y - hazard.prev.y) * alpha;
+
+        if (hazard.kind === "ember") {
+          if (emberIndex >= embers.length) continue;
+          const drop = embers[emberIndex];
+          if (drop === undefined) continue;
+          emberIndex++;
+          drop.group.visible = true;
+          drop.group.position.set(hx, hy + hazard.h * 0.5, FX_Z);
+          drop.head.scale.set(hazard.w, hazard.h, 1);
+          let bx = -hazard.vel.x;
+          let by = -hazard.vel.y;
+          const len = Math.sqrt(bx * bx + by * by);
+          if (len < 0.0001) {
+            bx = 0;
+            by = 1;
+          } else {
+            bx /= len;
+            by /= len;
+          }
+          for (let k = 0; k < EMBER_TAIL; k++) {
+            const mesh = drop.tail[k];
+            if (mesh === undefined) continue;
+            const back = hazard.h * (0.46 + k * 0.4);
+            const shrink = 0.74 - k * 0.2;
+            mesh.position.set(bx * back, by * back, -0.01 * (k + 1));
+            mesh.scale.set(hazard.w * shrink, hazard.h * shrink, 1);
+          }
+          continue;
+        }
+
         if (ridgeIndex >= ridges.length) continue;
         const slot = ridges[ridgeIndex];
         if (slot === undefined) continue;
         ridgeIndex++;
-        const hx = hazard.prev.x + (hazard.pos.x - hazard.prev.x) * alpha;
-        const hy = hazard.prev.y + (hazard.pos.y - hazard.prev.y) * alpha;
         slot.group.visible = true;
         slot.group.position.set(hx, hy, FX_Z);
         slot.crest.scale.set(hazard.w, hazard.h, 1);
@@ -688,6 +766,10 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       for (let i = ridgeIndex; i < ridges.length; i++) {
         const slot = ridges[i];
         if (slot !== undefined) slot.group.visible = false;
+      }
+      for (let i = emberIndex; i < embers.length; i++) {
+        const drop = embers[i];
+        if (drop !== undefined) drop.group.visible = false;
       }
 
       let pickupIndex = 0;

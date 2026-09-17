@@ -147,6 +147,91 @@ const STOMPER_TOE: Point[] = [
   [-0.13, 0.035]
 ];
 
+const LAMP_COWL: Point[] = [
+  [-0.42, 0.5],
+  [0.38, 0.5],
+  [0.3, 0.6],
+  [0.24, 0.73],
+  [-0.22, 0.73],
+  [-0.3, 0.6]
+];
+
+const LAMP_CAP_RIM: Point[] = [
+  [-0.425, 0.492],
+  [0.385, 0.492],
+  [0.39, 0.54],
+  [-0.42, 0.54]
+];
+
+const LAMP_BODY: Point[] = [
+  [-0.26, 0.18],
+  [0.2, 0.18],
+  [0.28, 0.54],
+  [-0.34, 0.54]
+];
+
+const LAMP_WINDOW: Point[] = [
+  [-0.16, 0.26],
+  [0.09, 0.26],
+  [0.12, 0.46],
+  [-0.2, 0.46]
+];
+
+const LAMP_GLASS: Point[] = [
+  [-0.185, 0.235],
+  [0.115, 0.235],
+  [0.15, 0.485],
+  [-0.235, 0.485]
+];
+
+const LAMP_RIM: Point[] = [
+  [-0.272, 0.165],
+  [0.212, 0.165],
+  [0.218, 0.215],
+  [-0.278, 0.215]
+];
+
+const LAMP_KEEPER: Point[] = [
+  [-0.08, 0.68],
+  [0.2, 0.68],
+  [0.26, 0.75],
+  [0.17, 0.8],
+  [0.34, 0.88],
+  [0.14, 0.99],
+  [0.0, 1.02],
+  [-0.1, 0.93],
+  [-0.12, 0.78]
+];
+
+const LAMP_POLE: Point[] = [
+  [-0.03, -0.021],
+  [0.4, -0.013],
+  [0.4, 0.013],
+  [-0.03, 0.021]
+];
+
+const LAMP_POLE_TIP: Point[] = [
+  [0.33, -0.019],
+  [0.41, -0.014],
+  [0.45, 0.0],
+  [0.41, 0.014],
+  [0.33, 0.019]
+];
+
+const LAMP_LINK: Point[] = [
+  [-0.032, -0.085],
+  [0.032, -0.085],
+  [0.032, 0.0],
+  [-0.032, 0.0]
+];
+
+const LAMP_LINK_HOLE: Point[] = [
+  [-0.013, -0.068],
+  [0.013, -0.068],
+  [0.013, -0.017],
+  [-0.013, -0.017]
+];
+
 function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
@@ -229,13 +314,17 @@ interface EnemyView {
   arm: THREE.Object3D | null;
   hips: THREE.Object3D[];
   feet: THREE.Object3D[];
+  chains: THREE.Object3D[];
   slateMat: THREE.MeshBasicMaterial;
   ashMat: THREE.MeshBasicMaterial;
   accentMat: THREE.MeshBasicMaterial;
+  backMat: THREE.MeshBasicMaterial | null;
   slateBase: THREE.Color;
   ashBase: THREE.Color;
   accentBase: THREE.Color;
   accentHot: THREE.Color;
+  backBase: THREE.Color;
+  restY: number;
   deadAt: number;
   squash: number;
   phase: number;
@@ -255,6 +344,7 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
 
   const slateProto = look.material("enemyBody", { unlit: true }) as THREE.MeshBasicMaterial;
   const ashProto = look.material("ash", { unlit: true }) as THREE.MeshBasicMaterial;
+  const charcoalProto = look.material("bossShell", { unlit: true }) as THREE.MeshBasicMaterial;
   const visorRest = new THREE.Color(look.colorOf("ash", tuning.feel.guardVisorRestShade));
   const visorHot = new THREE.Color(look.colorOf("enemyAccent"));
   const glowRest = new THREE.Color(look.colorOf("reward"));
@@ -353,13 +443,17 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
       arm,
       hips,
       feet: [],
+      chains: [],
       slateMat,
       ashMat,
       accentMat,
+      backMat: null,
       slateBase: new THREE.Color(slateProto.color),
       ashBase: new THREE.Color(ashProto.color),
       accentBase: visorRest,
       accentHot: visorHot,
+      backBase: new THREE.Color(charcoalProto.color),
+      restY: -0.24,
       deadAt: 0,
       squash: 1,
       phase: 0,
@@ -438,18 +532,132 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
       arm: null,
       hips: [],
       feet,
+      chains: [],
       slateMat,
       ashMat,
       accentMat,
+      backMat: null,
       slateBase: new THREE.Color(slateProto.color),
       ashBase: new THREE.Color(ashProto.color),
       accentBase: glowRest,
       accentHot: glowHot,
+      backBase: new THREE.Color(charcoalProto.color),
+      restY: -0.22,
       deadAt: 0,
       squash: 1,
       phase: 0,
       seen: false,
       wasGrounded: true
+    };
+  }
+
+  function buildLamplighter(): EnemyView {
+    const root = new THREE.Group();
+    const stack = new THREE.Object3D();
+    root.add(stack);
+    const lean = new THREE.Object3D();
+    lean.position.set(0, 0.5, 0);
+    stack.add(lean);
+
+    const slateMat = slateProto.clone();
+    const ashMat = ashProto.clone();
+    const backMat = charcoalProto.clone();
+    const accentMat = slateProto.clone();
+    accentMat.color.copy(glowRest);
+
+    const body = new THREE.Object3D();
+    body.position.set(0, -0.5, 0);
+    lean.add(body);
+
+    const cowl = plate(LAMP_COWL, backMat, depth);
+    cowl.position.z = -step;
+    body.add(cowl);
+
+    const capRim = plate(LAMP_CAP_RIM, porcelainMat, depth * 0.8);
+    capRim.position.z = step;
+    body.add(capRim);
+
+    const glass = plate(LAMP_GLASS, accentMat, depth * 0.6);
+    glass.position.z = -step * 0.6;
+    body.add(glass);
+
+    body.add(plate(LAMP_BODY, slateMat, depth, [pathOf(LAMP_WINDOW)]));
+
+    const rim = plate(LAMP_RIM, porcelainMat, depth * 0.8);
+    rim.position.z = step;
+    body.add(rim);
+
+    const head = new THREE.Object3D();
+    head.position.set(0, 0.68, step);
+    body.add(head);
+    const keeper = plate(LAMP_KEEPER, slateMat, depth);
+    keeper.position.y -= 0.68;
+    head.add(keeper);
+    head.add(pin(0, 0, depth * 0.6));
+
+    const arm = new THREE.Object3D();
+    arm.position.set(0.2, 0.13, step);
+    head.add(arm);
+    arm.add(plate(LAMP_POLE, slateMat, depth * 0.8));
+    const poleTip = plate(LAMP_POLE_TIP, porcelainMat, depth * 0.8);
+    poleTip.position.z = depth * 0.6;
+    arm.add(poleTip);
+    arm.add(pin(0, 0, depth * 0.6));
+
+    const chains: THREE.Object3D[] = [];
+    const chainSpecs: [number, number][] = [
+      [-0.2, 2],
+      [0.13, 3]
+    ];
+    for (const [cx, links] of chainSpecs) {
+      let parent: THREE.Object3D = body;
+      let anchorY = 0.175;
+      for (let i = 0; i < links; i++) {
+        const joint = new THREE.Object3D();
+        joint.position.set(i === 0 ? cx : 0, anchorY, i === 0 ? step * 0.5 : 0);
+        parent.add(joint);
+        joint.add(plate(LAMP_LINK, porcelainMat, depth * 0.7, [pathOf(LAMP_LINK_HOLE)]));
+        chains.push(joint);
+        parent = joint;
+        anchorY = -0.085;
+      }
+      body.add(pin(cx, 0.175, depth * 0.6));
+    }
+
+    group.add(root);
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh === true) mesh.layers.set(look.actorLayer);
+    });
+    applyOutline(root, tuning.feel.outlineThickness, look);
+
+    return {
+      id: -1,
+      kind: "lamplighter",
+      group: root,
+      stack,
+      lean,
+      body,
+      head,
+      arm,
+      hips: [],
+      feet: [],
+      chains,
+      slateMat,
+      ashMat,
+      accentMat,
+      backMat,
+      slateBase: new THREE.Color(slateProto.color),
+      ashBase: new THREE.Color(ashProto.color),
+      accentBase: glowRest,
+      accentHot: glowHot,
+      backBase: new THREE.Color(charcoalProto.color),
+      restY: -0.5,
+      deadAt: 0,
+      squash: 1,
+      phase: 0,
+      seen: false,
+      wasGrounded: false
     };
   }
 
@@ -464,7 +672,12 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         return view;
       }
     }
-    const created = enemy.kind === "guard" ? buildGuard() : buildStomper();
+    const created =
+      enemy.kind === "guard"
+        ? buildGuard()
+        : enemy.kind === "lamplighter"
+          ? buildLamplighter()
+          : buildStomper();
     created.id = enemy.id;
     views.push(created);
     return created;
@@ -486,7 +699,16 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         const view = acquire(enemy);
         view.seen = true;
 
-        const size = enemy.kind === "guard" ? live.guard : live.stomper;
+        const size =
+          enemy.kind === "guard"
+            ? live.guard
+            : enemy.kind === "lamplighter"
+              ? live.lamplighter
+              : live.stomper;
+        const telegraphDur =
+          enemy.kind === "lamplighter"
+            ? Math.max(live.lamplighter.dropTelegraphMs, 1) / 1000
+            : Math.max(live.guard.telegraphMs, 1) / 1000;
         const x = enemy.prev.x + (enemy.pos.x - enemy.prev.x) * alpha;
         const y = enemy.prev.y + (enemy.pos.y - enemy.prev.y) * alpha;
 
@@ -530,7 +752,9 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
 
         const leanAmount = THREE.MathUtils.degToRad(feel.enemyLeanDeg);
         const moving = Math.abs(enemy.vel.x) > 0.2;
-        if (moving && enemy.state === "patrol") {
+        if (enemy.kind === "lamplighter") {
+          view.phase += dt * live.lamplighter.bobSpeed;
+        } else if (moving && enemy.state === "patrol") {
           view.phase += dt * feel.legSwingSpeed * 0.42;
         }
 
@@ -538,10 +762,33 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         let drop = 0;
         let armTarget = 0.6;
         let headTarget = 0;
-        if (enemy.state === "telegraph") {
+        if (enemy.kind === "lamplighter") {
+          if (enemy.state === "telegraph") {
+            const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
+            leanTarget = leanAmount * 0.4 * p;
+            armTarget = -0.35 + 0.85 * p;
+            headTarget = -0.2 * p;
+          } else if (enemy.state === "attack") {
+            leanTarget = -leanAmount * 0.5;
+            armTarget = -1.25;
+            headTarget = -0.3;
+          } else if (enemy.state === "recover") {
+            leanTarget = leanAmount * 0.15;
+            drop = -0.02;
+            armTarget = -0.8;
+            headTarget = 0.2;
+          } else if (enemy.state === "hurt") {
+            leanTarget = leanAmount * 0.9;
+            armTarget = -0.1;
+            headTarget = 0.34;
+          } else {
+            leanTarget = Math.sin(view.phase * 0.45) * leanAmount * 0.12;
+            armTarget = -0.35 + Math.sin(view.phase * 0.7) * 0.05;
+            headTarget = Math.sin(view.phase * 0.5) * 0.03;
+          }
+        } else if (enemy.state === "telegraph") {
           leanTarget = leanAmount;
-          const dur = Math.max(live.guard.telegraphMs, 1) / 1000;
-          const p = clamp01(1 - (enemy.stateUntil - t) / dur);
+          const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
           armTarget = 0.6 + 2.0 * p;
           headTarget = -0.06 * p;
         } else if (enemy.state === "attack") {
@@ -562,9 +809,11 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
 
         if (enemy.kind === "stomper") leanTarget = 0;
         view.lean.rotation.z += (leanTarget - view.lean.rotation.z) * follow;
-        const restY = enemy.kind === "stomper" ? -0.22 : -0.24;
-        const bob = moving && enemy.state === "patrol" ? Math.abs(Math.cos(view.phase)) * 0.03 : 0;
-        view.body.position.y += (drop + restY + bob - view.body.position.y) * follow;
+        const bob =
+          enemy.kind !== "lamplighter" && moving && enemy.state === "patrol"
+            ? Math.abs(Math.cos(view.phase)) * 0.03
+            : 0;
+        view.body.position.y += (drop + view.restY + bob - view.body.position.y) * follow;
 
         const arm = view.arm;
         if (arm !== null) arm.rotation.z += (armTarget - arm.rotation.z) * follow;
@@ -595,10 +844,20 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
           footIndex++;
         }
 
+        let chainIndex = 0;
+        for (const chain of view.chains) {
+          const drag = enemy.vel.x * -0.05;
+          const swaySpeed = live.lamplighter.bobSpeed;
+          const target =
+            Math.sin(t * swaySpeed * 0.8 + chainIndex * 1.4) * 0.14 + drag * (1 + chainIndex * 0.4);
+          chain.rotation.z += (target - chain.rotation.z) * follow;
+          chainIndex++;
+        }
+
+        const dark = !enemy.alive || enemy.state === "dead";
         let hot = 0;
         if (enemy.state === "telegraph") {
-          const dur = Math.max(live.guard.telegraphMs, 1) / 1000;
-          const p = clamp01(1 - (enemy.stateUntil - t) / dur);
+          const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
           hot = 0.4 + 0.6 * p;
         } else if (enemy.state === "attack") {
           hot = 1;
@@ -606,11 +865,15 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
           hot = 1;
         }
 
-        if (enemy.kind === "stomper" && (!enemy.alive || enemy.state === "dead")) hot = 0;
+        if (enemy.kind !== "guard" && dark) hot = 0;
 
-        scratch.copy(view.accentBase).lerp(view.accentHot, hot).lerp(WHITE, step2);
-        if (enemy.kind === "stomper" && (!enemy.alive || enemy.state === "dead")) {
-          scratch.lerp(view.slateBase, 1 - fade);
+        if (enemy.kind === "lamplighter" && dark) {
+          scratch.copy(view.backBase).lerp(WHITE, step2);
+        } else {
+          scratch.copy(view.accentBase).lerp(view.accentHot, hot).lerp(WHITE, step2);
+          if (enemy.kind === "stomper" && dark) {
+            scratch.lerp(view.slateBase, 1 - fade);
+          }
         }
         view.accentMat.color.copy(scratch);
 
@@ -618,6 +881,11 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         view.slateMat.color.copy(scratch);
         scratch.copy(view.ashBase).lerp(WHITE, step2);
         view.ashMat.color.copy(scratch);
+        const backMat = view.backMat;
+        if (backMat !== null) {
+          scratch.copy(view.backBase).lerp(WHITE, step2);
+          backMat.color.copy(scratch);
+        }
       }
 
       for (const view of views) {

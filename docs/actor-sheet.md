@@ -22,13 +22,19 @@ The look: tin shadow puppets in an iron belfry. Thin cut-metal plates, layered a
 
 ## Courier (1.2 tall, collision 0.6 x 1.2)
 
-Plates, back to front: cape-hood (charcoal, one shape: a hood with a forward peak flowing into a short cape that ends above the knees, hem cut in two shallow scallops), far leg (slate, thigh and shin plates with a knee pin), far arm (slate), torso (slate, a keel: narrow waist, square shoulders 0.5 wide, a porcelain collar cut where hood meets torso), head (ash hood face-plate with a void face opening; the opening is a tall oval so the head reads as a hooded head, not a helmet), near leg (ash), near arm (ash) with the needle, boots (ash, one plate each: heel notch, square toe, sole flat on the collision floor), lantern plate (a small rectangular tin frame, porcelain, with an amber glass inset and a flame diamond) hung from the off hand at chest height.
+One dominant value (revised 2026-09-17, v4). The first build spread ash near limbs over a slate torso over a charcoal cape and put a porcelain pin at every joint: bones through a body, vertebrae down the limbs. The courier now carries one value and four porcelain accents, and its personality is in the silhouette instead.
+
+Values: torso, near leg, near arm, both boots, the head (hood body), the satchel, the needle body, the ferrule and the eye ring are all slate. The cape-hood, the hood point, the far leg and the far arm are charcoal. Ash is gone from the courier. Porcelain appears at exactly four places: the collar line, the hood's face-edge rim, the lantern frame and bail, and the needle's tip tenth (plus the satchel's buckle dot). The face opening is void. Amber is the lantern glass and flame only.
+
+Pins: only at the shoulders and the hips, and drawn as dimples, not rivets: a disc of `feel.actorPinRadius` in slate darkened by a `DIMPLE_SHADE` constant in `playerMesh.ts` (the file already carries its proportions as constants; no tuning key was added). The knee and elbow pins are cut.
+
+Plates, back to front: cape-hood (charcoal, one shape: a hood with a forward peak flowing into a short cape above the knees, hem cut in four uneven ragged notches), hood point (charcoal, a tapered tail trailing back from the crown on its own pivot), far leg, far arm, satchel (slate, a rectangular flap bag on the back at the hip, flap wider than the body, with a porcelain buckle dot), torso (slate keel, narrow waist, square shoulders 0.5 wide, porcelain collar cut where hood meets torso), head (slate hood face-plate with a void face opening and a thin porcelain crescent along the front edge only, from the forward slope of the crown down to the jaw; it must not close over the crown or it reads as a ring), near leg, near arm with the needle, boots, lantern plate hung from the off hand at chest height.
 
 Proportions from the floor: boots 0.1, legs to hip 0.5, torso to shoulder 0.42, head 0.28 with the hood peak overhanging forward 0.08. Shoulder width 0.5, hip width 0.3. The courier reads as a slight figure carrying a light.
 
-The wick needle: a tapered plate 0.95 body heights long at rest (`needleRestLengthRatio`), ferrule block at the hand, an eye ring (a small torus) at the ferrule end, the last tenth porcelain. Rest angle `needleRestDeg` about -55 (held low and close), attack sweeps between `needleBackDeg` and `needleFrontDeg` as today, active-frame stretch as today. At full extension the tip lands at the attack reach so the hit reads true.
+The wick needle: a tapered slate plate 0.95 body heights long at rest (`needleRestLengthRatio`), ferrule block at the hand, an eye ring (a small torus) at the ferrule end, the last tenth porcelain. Rest angle `needleRestDeg` about -55 (held low and close), attack sweeps between `needleBackDeg` and `needleFrontDeg` as today, active-frame stretch as today. At full extension the tip lands at the attack reach so the hit reads true.
 
-Poses (existing keys drive them): run (hip and shoulder swing `legSwingDeg`, `courierArmSwingDeg`, knees `courierKneeBendDeg`, lean `courierLeanRunDeg`, cape hem swing `courierHemSwingDeg`), jump (anticipation crouch `courierJumpCrouch` over `courierJumpAnticipateMs`, apex stretch `courierApexStretch`, cape flares `courierHemFlareAir`), dash (root stretch `dashStretch`, cape trails), attack (lead arm and needle arc, torso twist `courierAttackTwistDeg`), hurt (recoil `courierHurtRecoilDeg`, blink via material color, not opacity), death (crumple at hip and knee over `courierDeathCrumpleMs`, lantern gutters over `courierGutterMs`: flame shrinks to nothing, glass goes charcoal, the point light fades).
+Poses (existing keys drive them): run (hip and shoulder swing `legSwingDeg`, `courierArmSwingDeg`, knees `courierKneeBendDeg`, lean `courierLeanRunDeg`, cape hem swing `courierHemSwingDeg`; the hood point rides the same hem angle, scaled by a constant so it trails further than the hem), jump (anticipation crouch `courierJumpCrouch` over `courierJumpAnticipateMs`, apex stretch `courierApexStretch`, cape flares `courierHemFlareAir`), dash (root stretch `dashStretch`, cape trails), attack (lead arm and needle arc, torso twist `courierAttackTwistDeg`), hurt (recoil `courierHurtRecoilDeg`, blink via material color, not opacity), death (crumple at hip and knee over `courierDeathCrumpleMs`, lantern gutters over `courierGutterMs`: flame shrinks to nothing, glass goes charcoal, the point light fades).
 
 ## Cinder Guard (0.8 x 1.0)
 
@@ -37,6 +43,20 @@ A squat iron figure: body plate (slate, a riveted breastplate silhouette with th
 ## Boiler Stomper (0.9 x 0.8)
 
 A riveted boiler drum on block feet: drum plate (slate, a rounded rectangle with two porcelain band lines cut across it and a row of rivet pins), two foot plates (ash, blocks with a porcelain toe line), an underglow plate beneath the drum (amber at rest, vermilion during the hop), a small chimney stub on top. Idle: nothing moves. Hop: drum squashes (`stomperSquash`), feet tuck; landing: drum stretches, feet spread, dust puffs from the effects layer. Death: the drum plate tips and the underglow goes out.
+
+## Lamplighter (0.8 x 0.9, hovering)
+
+A brass hanging lamp that is also a creature. It never touches the floor and has no legs. Plates, back to front: hood-cowl (charcoal, an oil-lamp chimney cap flared wider than the lantern), lamp glass (the window plate, amber at rest, seen through the cut), lamp body (slate, a tapered lantern box wider at the top with a void window cut through to the glass), cap rim and base rim (porcelain lines closing the box top and bottom), keeper (slate, one plate: a small hooded figure crouched on the cap, offset forward, hood peak overhanging the lantern's front), wick-pole (slate, one plate swung from the keeper's hand, last tenth a porcelain tip), two chain tails hanging below the base rim (porcelain link plates cut through, two links on the back tail and three on the front so they never read as a pair of legs). Pins at the pole root, the keeper's seat, and both chain roots.
+
+Chroma: amber in the lamp window at rest, vermilion in the window during telegraph and the tick of the drop, nothing else. Slate is the dominant value.
+
+Bob is the simulation's (`bobAmp`, `bobSpeed`) and the render adds none.
+
+Poses by `EnemyState`: patrol (a one-degree breath on the keeper and the lamp, chains sway off the drift, pole held low and forward); telegraph (the lamp leans toward the courier, the keeper tips forward, the pole rises, the window ramps to vermilion over `dropTelegraphMs`); attack (pole dips hard, keeper thrusts forward, window full vermilion, the ember leaves the chain tails); recover (pole hangs low, keeper sags back, window amber again); hurt (recoil `enemyRecoilDistance`, keeper rocks back, blink via material color); dead (the window goes charcoal, the figure drops one step and fades over `enemyDeathFadeMs`).
+
+No floor mark. The threatened area is the falling ember, not the lamp's own footprint, so `fx.ts` draws no telegraph box for this kind; the wind-up is read from the pose and the window.
+
+Ember hazard (`fx.ts`): a hazard of kind `ember` renders as an amber diamond at `emberWidth` x `emberHeight` with three fading diamonds trailing back up the fall line; kind `wave` keeps the ridge exactly as before. Ridges and embers are separate pools with separate per-frame cursors and both pools are swept invisible past their cursor, so a hazard slot recycled from one kind to the other never leaves the other mesh on screen. An ember's birth spawns no dust puff; it is born in the air.
 
 ## The Bellkeeper (3 x 3)
 

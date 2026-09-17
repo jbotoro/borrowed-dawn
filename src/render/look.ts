@@ -114,6 +114,18 @@ export interface LookProfile {
   colorOf(role: PaletteRole, shade?: number): number;
 }
 
+export const ACTOR_LAYER = 1;
+
+const actorLightSet = new Set<THREE.Light>();
+
+export function registerActorLight(light: THREE.Light): void {
+  actorLightSet.add(light);
+}
+
+export function actorLights(): ReadonlySet<THREE.Light> {
+  return actorLightSet;
+}
+
 export const RAMP: Ramp = {
   void: 0x07090d,
   charcoal: 0x151b24,
@@ -936,7 +948,7 @@ function buildProfile(seed: LookSeed, bands: number): LookProfile {
     ambienceSaturation: seed.ambienceSaturation,
     ambienceIntensityScale: seed.ambienceIntensityScale,
     rigMix: seed.rigMix,
-    actorLayer: 1,
+    actorLayer: ACTOR_LAYER,
     material,
     litMaterial,
     heat,

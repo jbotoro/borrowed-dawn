@@ -5,7 +5,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { Pass, FullScreenQuad } from "three/addons/postprocessing/Pass.js";
 import type { Tuning } from "../tuning";
-import { inkColor, syncLookUniforms } from "./look";
+import { ACTOR_LAYER, actorLights, inkColor, syncLookUniforms } from "./look";
 
 const MAX_SHAFT_SAMPLES = 48;
 
@@ -372,6 +372,10 @@ class ScenePass extends Pass {
 }
 
 class ShaftPass extends Pass {
+  private readonly scene: THREE.Scene;
+  private readonly camera: THREE.Camera;
+  private readonly actorLayer: number;
+  private readonly world: THREE.WebGLRenderTarget;
   private readonly bright: THREE.WebGLRenderTarget;
   private readonly brightMaterial: THREE.ShaderMaterial;
   private readonly shaftMaterial: THREE.ShaderMaterial;
@@ -380,20 +384,39 @@ class ShaftPass extends Pass {
   private readonly brightQuad: FullScreenQuad;
   private readonly shaftQuad: FullScreenQuad;
   private readonly scratchDir = new THREE.Vector2();
+  private readonly hidden: THREE.Light[] = [];
   private width = 1280;
   private height = 720;
   private quality = 1;
 
-  constructor(width: number, height: number) {
+  constructor(
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    actorLayer: number,
+    width: number,
+    height: number
+  ) {
     super();
     this.needsSwap = true;
+    this.scene = scene;
+    this.camera = camera;
+    this.actorLayer = actorLayer;
     this.width = width;
     this.height = height;
-    this.bright = new THREE.WebGLRenderTarget(
-      Math.max(Math.round(width * 0.25), 16),
-      Math.max(Math.round(height * 0.25), 16),
-      { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false }
-    );
+    const bw = Math.max(Math.round(width * 0.25), 16);
+    const bh = Math.max(Math.round(height * 0.25), 16);
+    this.world = new THREE.WebGLRenderTarget(bw, bh, {
+      type: THREE.HalfFloatType,
+      depthBuffer: true,
+      stencilBuffer: false
+    });
+    this.world.texture.minFilter = THREE.LinearFilter;
+    this.world.texture.magFilter = THREE.LinearFilter;
+    this.bright = new THREE.WebGLRenderTarget(bw, bh, {
+      type: THREE.HalfFloatType,
+      depthBuffer: false,
+      stencilBuffer: false
+    });
     this.bright.texture.minFilter = THREE.LinearFilter;
     this.bright.texture.magFilter = THREE.LinearFilter;
     this.bright.texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -446,6 +469,7 @@ class ShaftPass extends Pass {
     const scale = 0.25 * Math.min(Math.max(this.quality, 0.25), 1);
     const bw = Math.max(Math.round(this.width * scale), 16);
     const bh = Math.max(Math.round(this.height * scale), 16);
+    this.world.setSize(bw, bh);
     this.bright.setSize(bw, bh);
     this.brightUniforms.uTexel.value.set(1 / bw, 1 / bh);
   }
@@ -462,7 +486,24 @@ class ShaftPass extends Pass {
     readBuffer: THREE.WebGLRenderTarget
   ): void {
     const previous = renderer.getRenderTarget();
-    this.brightUniforms.tDiffuse.value = readBuffer.texture;
+
+    const autoClear = renderer.autoClear;
+    const mask = this.camera.layers.mask;
+    const lights = actorLights();
+    for (const light of lights) {
+      if (light.visible) this.hidden.push(light);
+    }
+    for (const light of this.hidden) light.visible = false;
+    renderer.autoClear = true;
+    this.camera.layers.disable(this.actorLayer);
+    renderer.setRenderTarget(this.world);
+    renderer.render(this.scene, this.camera);
+    this.camera.layers.mask = mask;
+    renderer.autoClear = autoClear;
+    for (const light of this.hidden) light.visible = true;
+    this.hidden.length = 0;
+
+    this.brightUniforms.tDiffuse.value = this.world.texture;
     renderer.setRenderTarget(this.bright);
     renderer.clear();
     this.brightQuad.render(renderer);
@@ -480,6 +521,7 @@ class ShaftPass extends Pass {
   }
 
   override dispose(): void {
+    this.world.dispose();
     this.bright.dispose();
     this.brightMaterial.dispose();
     this.shaftMaterial.dispose();
@@ -525,7 +567,7 @@ export function createPostfx(
   inkUniforms.tDepth.value = scenePass.depth;
   composer.addPass(ink);
 
-  const shafts = new ShaftPass(width, height);
+  const shafts = new ShaftPass(scene, camera, ACTOR_LAYER, width, height);
   shafts.setSize(width, height);
   composer.addPass(shafts);
 
