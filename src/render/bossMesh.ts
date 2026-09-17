@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Tuning } from "../tuning";
 import type { Boss } from "../game/types";
-import type { LitMaterial, LookProfile } from "./look";
+import type { LookProfile } from "./look";
 import { applyOutline } from "./look";
 
 export interface BossMesh {
@@ -15,50 +15,120 @@ export interface BossMesh {
   ): void;
 }
 
+type Point = readonly [number, number];
+
 const WHITE = new THREE.Color(0xffffff);
 
-function shellProfile(): THREE.Vector2[] {
-  return [
-    new THREE.Vector2(0.5, 0),
-    new THREE.Vector2(0.492, 0.05),
-    new THREE.Vector2(0.44, 0.13),
-    new THREE.Vector2(0.405, 0.22),
-    new THREE.Vector2(0.398, 0.33),
-    new THREE.Vector2(0.378, 0.43),
-    new THREE.Vector2(0.305, 0.53),
-    new THREE.Vector2(0.175, 0.61),
-    new THREE.Vector2(0.115, 0.65),
-    new THREE.Vector2(0.105, 0.7)
-  ];
-}
+const LINK_SPACING_REST = 0.075;
+const LINK_SPACING_FULL = 0.138;
+const LINKS_PER_SEGMENT = 4;
 
-function crackShape(): THREE.Shape {
-  const shape = new THREE.Shape();
-  shape.moveTo(0, 0);
-  shape.lineTo(0.05, 0.1);
-  shape.lineTo(0.015, 0.2);
-  shape.lineTo(0.07, 0.31);
-  shape.lineTo(0.03, 0.42);
-  shape.lineTo(0.09, 0.52);
-  shape.lineTo(0.13, 0.5);
-  shape.lineTo(0.075, 0.4);
-  shape.lineTo(0.115, 0.3);
-  shape.lineTo(0.06, 0.19);
-  shape.lineTo(0.1, 0.09);
-  shape.lineTo(0.055, -0.01);
-  shape.closePath();
-  return shape;
-}
+const BELL: Point[] = [
+  [-0.5, 0.0],
+  [-0.497, 0.055],
+  [-0.44, 0.12],
+  [-0.405, 0.22],
+  [-0.392, 0.35],
+  [-0.385, 0.46],
+  [-0.345, 0.55],
+  [-0.25, 0.625],
+  [-0.15, 0.66],
+  [0.15, 0.66],
+  [0.25, 0.625],
+  [0.345, 0.55],
+  [0.385, 0.46],
+  [0.392, 0.35],
+  [0.405, 0.22],
+  [0.44, 0.12],
+  [0.497, 0.055],
+  [0.5, 0.0]
+];
 
-function mouthShape(): THREE.Shape {
-  const shape = new THREE.Shape();
-  shape.moveTo(-0.5, 0);
-  shape.lineTo(-0.5, 0.42);
-  shape.quadraticCurveTo(0, 0.95, 0.5, 0.42);
-  shape.lineTo(0.5, 0);
-  shape.closePath();
-  return shape;
-}
+const BELL_RIM: Point[] = [
+  [-0.5, 0.0],
+  [0.5, 0.0],
+  [0.495, 0.024],
+  [-0.495, 0.024]
+];
+
+const BELL_BAND_LOW: Point[] = [
+  [-0.393, 0.33],
+  [0.393, 0.33],
+  [0.391, 0.355],
+  [-0.391, 0.355]
+];
+
+const BELL_BAND_HIGH: Point[] = [
+  [-0.377, 0.5],
+  [0.377, 0.5],
+  [0.366, 0.525],
+  [-0.366, 0.525]
+];
+
+const CRACK: Point[] = [
+  [-0.03, 0.05],
+  [0.015, 0.14],
+  [-0.015, 0.24],
+  [0.03, 0.33],
+  [0.0, 0.42],
+  [0.045, 0.5],
+  [0.085, 0.47],
+  [0.04, 0.39],
+  [0.075, 0.3],
+  [0.03, 0.21],
+  [0.06, 0.12],
+  [0.022, 0.04]
+];
+
+const TORSO: Point[] = [
+  [-0.2, 0.52],
+  [-0.27, 0.66],
+  [-0.3, 0.77],
+  [-0.24, 0.85],
+  [-0.08, 0.89],
+  [0.14, 0.87],
+  [0.24, 0.8],
+  [0.22, 0.67],
+  [0.17, 0.57],
+  [0.1, 0.52]
+];
+
+const HEAD: Point[] = [
+  [-0.16, -0.07],
+  [-0.19, 0.03],
+  [-0.14, 0.11],
+  [0.02, 0.14],
+  [0.16, 0.09],
+  [0.19, 0.0],
+  [0.14, -0.08]
+];
+
+const HEAD_VOID: Point[] = [
+  [-0.12, -0.05],
+  [0.15, -0.05],
+  [0.15, 0.09],
+  [-0.12, 0.09]
+];
+
+const MOUTH: Point[] = [
+  [-0.15, 0.035],
+  [-0.142, 0.13],
+  [-0.08, 0.195],
+  [0.08, 0.195],
+  [0.142, 0.13],
+  [0.15, 0.035]
+];
+
+const YOKE: Point[] = [
+  [-0.55, 0.96],
+  [0.55, 0.96],
+  [0.55, 1.09],
+  [0.42, 1.09],
+  [0.42, 1.03],
+  [-0.42, 1.03],
+  [-0.42, 1.09],
+  [-0.55, 1.09]
+];
 
 function clamp01(value: number): number {
   if (value < 0) return 0;
@@ -66,160 +136,284 @@ function clamp01(value: number): number {
   return value;
 }
 
+function shapeOf(points: Point[]): THREE.Shape {
+  const shape = new THREE.Shape();
+  let first = true;
+  for (const point of points) {
+    if (first) {
+      shape.moveTo(point[0], point[1]);
+      first = false;
+    } else {
+      shape.lineTo(point[0], point[1]);
+    }
+  }
+  shape.closePath();
+  return shape;
+}
+
+function ringShape(rx: number, ry: number, tx: number, ty: number): THREE.Shape {
+  const shape = new THREE.Shape();
+  shape.absellipse(0, 0, rx, ry, 0, Math.PI * 2, false, 0);
+  const hole = new THREE.Path();
+  hole.absellipse(0, 0, Math.max(rx - tx, 0.002), Math.max(ry - ty, 0.002), 0, Math.PI * 2, true, 0);
+  shape.holes.push(hole);
+  return shape;
+}
+
+function discShape(radius: number): THREE.Shape {
+  const shape = new THREE.Shape();
+  shape.absellipse(0, 0, radius, radius, 0, Math.PI * 2, false, 0);
+  return shape;
+}
+
+function extrude(shape: THREE.Shape, depth: number): THREE.BufferGeometry {
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 10
+  });
+  geometry.translate(0, 0, -depth * 0.5);
+  return geometry;
+}
+
+function centered(geometry: THREE.BufferGeometry): [THREE.BufferGeometry, number, number] {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  if (box === null) return [geometry, 0, 0];
+  const cx = (box.min.x + box.max.x) * 0.5;
+  const cy = (box.min.y + box.max.y) * 0.5;
+  geometry.translate(-cx, -cy, 0);
+  return [geometry, cx, cy];
+}
+
+function plate(points: Point[], material: THREE.Material, depth: number): THREE.Mesh {
+  const [geometry, cx, cy] = centered(extrude(shapeOf(points), depth));
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(cx, cy, 0);
+  return mesh;
+}
+
 export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
   const group = new THREE.Group();
   group.name = "boss";
   group.visible = false;
 
+  const depth = tuning.feel.actorPlateDepth;
+  const step = tuning.feel.actorPlateStep;
+  const zVoid = -2 * step;
+  const zShell = -step;
+  const zFarArm = 0;
+  const zBody = step;
+  const zNear = 2 * step;
+
+  const charcoalMat = look.material("bossShell", { unlit: true }) as THREE.MeshBasicMaterial;
+  const slateMat = look.material("enemyBody", { unlit: true }) as THREE.MeshBasicMaterial;
+  const ashMat = look.material("ash", { unlit: true }) as THREE.MeshBasicMaterial;
+  const chainMat = look.material("chain", { unlit: true }) as THREE.MeshBasicMaterial;
+  const porcelainMat = look.material("actorMetal", { unlit: true }) as THREE.MeshBasicMaterial;
+  const voidMat = look.material("void", { unlit: true, fog: false }) as THREE.MeshBasicMaterial;
+  const mouthMat = look.material("bossFurnace", { unlit: true }) as THREE.MeshBasicMaterial;
+  const visorMat = look.material("void", { unlit: true }) as THREE.MeshBasicMaterial;
+  const crackMat = look.material("bossFurnace", { unlit: true }) as THREE.MeshBasicMaterial;
+
+  const charcoalBase = new THREE.Color(charcoalMat.color);
+  const slateBase = new THREE.Color(slateMat.color);
+  const ashBase = new THREE.Color(ashMat.color);
+  const amber = new THREE.Color(look.colorOf("bossFurnace"));
+  const danger = new THREE.Color(look.colorOf("danger"));
+  const voidColor = new THREE.Color(look.colorOf("void"));
+  const scratch = new THREE.Color();
+
   const rig = new THREE.Group();
   group.add(rig);
 
-  const shellMat = look.litMaterial("bossShell", {
-    shade: 1.13,
-    roughness: 0.6,
-    metalness: 0.4,
-    doubleSide: true
-  });
-  const rimMat = look.material("actorMetal", {
-    roughness: 0.45,
-    metalness: 0.4,
-    doubleSide: true
-  });
-  const voidMat = look.material("void", { unlit: true, fog: false });
-  const yokeMat = look.material("bossShell", { shade: 1.1, roughness: 0.8, doubleSide: true });
-  const chainMat = look.material("chain", { shade: 0.72, roughness: 0.6, doubleSide: true });
-  const ashMat = look.material("ash", { shade: 0.6, roughness: 0.65, doubleSide: true });
-  const furnaceMat = look.litMaterial("bossFurnace", {
-    emissiveIntensity: tuning.feel.bossFurnaceEmissive,
-    roughness: 0.4,
-    doubleSide: true
-  });
-  const bodyMat = look.material("bossShell", { shade: 1.25, roughness: 0.75, doubleSide: true });
-  const armMat = look.litMaterial("bossShell", {
-    shade: 1.1,
-    emissiveColor: look.heat(0),
-    emissiveIntensity: tuning.feel.bellHeatEmissive,
-    roughness: 0.6,
-    metalness: 0.35,
-    doubleSide: true
-  });
-  const crackMat = look.litMaterial("bossFurnace", {
-    emissiveColor: look.heat(0.8),
-    emissiveIntensity: tuning.feel.bellHeatEmissive,
-    roughness: 0.5,
-    doubleSide: true
-  });
-
-  const yoke = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.13, 0.42), yokeMat);
-  yoke.position.set(0, 1.02, 0);
+  const yoke = plate(YOKE, charcoalMat, depth * 1.6);
+  yoke.position.z = zShell;
   rig.add(yoke);
 
-  const yokeCapL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.26, 0.5), yokeMat);
-  yokeCapL.position.set(-0.47, 0.96, 0);
-  rig.add(yokeCapL);
-  const yokeCapR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.26, 0.5), yokeMat);
-  yokeCapR.position.set(0.47, 0.96, 0);
-  rig.add(yokeCapR);
+  const hangSpacing = Math.max(tuning.feel.bellChainSpacing, 0.05);
+  const hangLinkGeometry = centered(
+    extrude(ringShape(0.058, hangSpacing * 0.54, 0.022, 0.026), depth * 0.7)
+  )[0];
+  const armLinkGeometry = centered(extrude(ringShape(0.052, 0.072, 0.02, 0.024), depth * 0.7))[0];
+  const clapperGeometry = centered(extrude(discShape(0.095), depth))[0];
+  const clapperRimGeometry = centered(extrude(ringShape(0.11, 0.11, 0.022, 0.022), depth * 0.7))[0];
 
-  const linkGeometry = new THREE.TorusGeometry(0.075, 0.024, 4, 10);
   const chain = new THREE.Group();
-  chain.position.set(0, 1.08, 0);
+  chain.position.set(0, 1.06, zShell);
   rig.add(chain);
   const links = Math.max(2, Math.round(tuning.feel.bellChainLinks));
   for (let i = 0; i < links; i++) {
-    const link = new THREE.Mesh(linkGeometry, chainMat);
-    link.position.set(0, i * tuning.feel.bellChainSpacing, 0);
-    link.rotation.y = i % 2 === 0 ? 0 : Math.PI * 0.5;
+    const link = new THREE.Mesh(hangLinkGeometry, chainMat);
+    link.position.set(0, i * hangSpacing, 0);
+    link.scale.x = i % 2 === 0 ? 1 : 0.45;
     chain.add(link);
   }
 
-  const furnaceBody = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.4, 12), bodyMat);
-  furnaceBody.position.set(0, 0.2, 0);
-  rig.add(furnaceBody);
+  const bodyLift = new THREE.Object3D();
+  rig.add(bodyLift);
 
-  const mouth = new THREE.Mesh(new THREE.ShapeGeometry(mouthShape()), furnaceMat);
-  mouth.position.set(0, 0.048, 0.33);
-  mouth.scale.set(0.42, 0.32, 1);
-  rig.add(mouth);
-
-  const mouthFrame = new THREE.Mesh(new THREE.ShapeGeometry(mouthShape()), ashMat);
-  mouthFrame.position.set(0, 0.026, 0.315);
-  mouthFrame.scale.set(0.49, 0.37, 1);
-  rig.add(mouthFrame);
-
-  const furnaceLight = new THREE.PointLight(look.colorOf("bossFurnace"), 0, 1, 2);
-  group.add(furnaceLight);
+  const shortChains: THREE.Object3D[] = [];
+  for (const sx of [-0.28, 0.28]) {
+    const holder = new THREE.Object3D();
+    holder.position.set(sx, 0.98, zShell);
+    rig.add(holder);
+    for (let i = 0; i < 3; i++) {
+      const link = new THREE.Mesh(armLinkGeometry, chainMat);
+      link.position.set(0, -0.06 - i * 0.085, 0);
+      link.scale.x = i % 2 === 0 ? 1 : 0.45;
+      holder.add(link);
+    }
+    shortChains.push(holder);
+  }
 
   const shellPivot = new THREE.Object3D();
-  shellPivot.position.set(0, 0.24, 0);
-  rig.add(shellPivot);
+  bodyLift.add(shellPivot);
 
   const shellScale = new THREE.Object3D();
   shellPivot.add(shellScale);
 
-  const shellGeometry = new THREE.LatheGeometry(shellProfile(), 18);
-  const shell = new THREE.Mesh(shellGeometry, shellMat);
-  shellScale.add(shell);
+  const bell = plate(BELL, charcoalMat, depth);
+  bell.position.z = zShell;
+  shellScale.add(bell);
 
-  const inner = new THREE.Mesh(shellGeometry, voidMat);
-  inner.scale.setScalar(0.93);
-  inner.position.set(0, 0.005, 0);
-  shellScale.add(inner);
+  const bellRim = plate(BELL_RIM, porcelainMat, depth * 0.8);
+  bellRim.position.z = zShell + depth * 0.7;
+  shellScale.add(bellRim);
 
-  const mouthPlate = new THREE.Mesh(new THREE.CircleGeometry(0.45, 18), voidMat);
-  mouthPlate.rotation.x = Math.PI * 0.5;
-  mouthPlate.position.set(0, 0.012, 0);
-  shellScale.add(mouthPlate);
+  const bandLow = plate(BELL_BAND_LOW, porcelainMat, depth * 0.8);
+  bandLow.position.z = zShell + depth * 0.7;
+  shellScale.add(bandLow);
 
-  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.478, 0.026, 4, 22), rimMat);
-  lip.rotation.x = Math.PI * 0.5;
-  lip.position.set(0, 0.015, 0);
-  shellScale.add(lip);
+  const bandHigh = plate(BELL_BAND_HIGH, porcelainMat, depth * 0.8);
+  bandHigh.position.z = zShell + depth * 0.7;
+  shellScale.add(bandHigh);
 
-  const shoulderBand = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.018, 4, 20), rimMat);
-  shoulderBand.rotation.x = Math.PI * 0.5;
-  shoulderBand.position.set(0, 0.42, 0);
-  shellScale.add(shoulderBand);
+  const crackBack = plate(CRACK, voidMat, depth * 0.8);
+  const crackRestX = crackBack.position.x;
+  const crackRestY = crackBack.position.y;
+  crackBack.position.z = zVoid;
+  shellScale.add(crackBack);
 
-  const crackGeometry = new THREE.ShapeGeometry(crackShape());
-  const crack = new THREE.Mesh(crackGeometry, crackMat);
-  crack.position.set(-0.04, 0.09, 0.4);
-  crack.rotation.z = 0.12;
-  crack.visible = false;
-  shellScale.add(crack);
+  const crackGlow = plate(CRACK, crackMat, depth * 0.7);
+  crackGlow.position.z = zVoid + depth * 0.5;
+  crackGlow.visible = false;
+  shellScale.add(crackGlow);
 
-  const armPivot = new THREE.Object3D();
-  armPivot.position.set(0.42, 0.5, 0.3);
-  rig.add(armPivot);
+  const torso = plate(TORSO, slateMat, depth);
+  torso.position.z = zBody;
+  shellScale.add(torso);
 
-  const armGeometry = new THREE.BoxGeometry(1, 0.1, 0.14);
-  armGeometry.translate(0.5, 0, 0);
-  const arm = new THREE.Mesh(armGeometry, armMat);
-  armPivot.add(arm);
+  const mouth = plate(MOUTH, mouthMat, depth * 0.8);
+  mouth.position.z = zNear + depth;
+  shellScale.add(mouth);
 
-  const clapper = new THREE.Object3D();
-  armPivot.add(clapper);
-  const clapperHead = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 7), armMat);
-  clapperHead.scale.set(1, 1.25, 1);
-  clapper.add(clapperHead);
-  const clapperBand = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.02, 4, 12), rimMat);
-  clapperBand.rotation.x = Math.PI * 0.5;
-  clapper.add(clapperBand);
+  const headPivot = new THREE.Object3D();
+  headPivot.position.set(0.0, 0.89, 0);
+  shellScale.add(headPivot);
 
-  const shoulderPin = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.14, 8), chainMat);
-  shoulderPin.rotation.x = Math.PI * 0.5;
-  shoulderPin.position.set(0.42, 0.5, 0.3);
-  rig.add(shoulderPin);
+  const headVoid = plate(HEAD_VOID, visorMat, depth * 0.7);
+  headVoid.position.z = zBody + depth * 0.4;
+  headPivot.add(headVoid);
 
+  const headShape = shapeOf(HEAD);
+  for (const sx of [-0.06, 0.02, 0.1]) {
+    const slit = new THREE.Path();
+    slit.moveTo(sx - 0.013, -0.035);
+    slit.lineTo(sx + 0.013, -0.035);
+    slit.lineTo(sx + 0.013, 0.075);
+    slit.lineTo(sx - 0.013, 0.075);
+    slit.closePath();
+    headShape.holes.push(slit);
+  }
+  const headParts = centered(extrude(headShape, depth));
+  const headPlate = new THREE.Mesh(headParts[0], ashMat);
+  headPlate.position.set(headParts[1], headParts[2], zBody + depth);
+  headPivot.add(headPlate);
+
+  interface Arm {
+    pivot: THREE.Object3D;
+    links: THREE.Mesh[];
+    elbow: THREE.Object3D;
+    clapper: THREE.Object3D;
+  }
+
+  function buildArm(x: number, y: number, z: number, material: THREE.MeshBasicMaterial): Arm {
+    const pivot = new THREE.Object3D();
+    pivot.position.set(x, y, z);
+    shellScale.add(pivot);
+
+    const pin = new THREE.Mesh(
+      centered(extrude(discShape(tuning.feel.actorPinRadius), depth * 0.6))[0],
+      porcelainMat
+    );
+    pin.position.z = depth * 0.7;
+    pivot.add(pin);
+
+    const armLinks: THREE.Mesh[] = [];
+    for (let i = 0; i < LINKS_PER_SEGMENT; i++) {
+      const link = new THREE.Mesh(armLinkGeometry, material);
+      link.rotation.z = Math.PI * 0.5;
+      link.scale.x = i % 2 === 0 ? 1 : 0.45;
+      pivot.add(link);
+      armLinks.push(link);
+    }
+
+    const elbow = new THREE.Object3D();
+    pivot.add(elbow);
+    const elbowPin = new THREE.Mesh(
+      centered(extrude(discShape(tuning.feel.actorPinRadius), depth * 0.6))[0],
+      porcelainMat
+    );
+    elbowPin.position.z = depth * 0.7;
+    elbow.add(elbowPin);
+
+    for (let i = 0; i < LINKS_PER_SEGMENT; i++) {
+      const link = new THREE.Mesh(armLinkGeometry, material);
+      link.rotation.z = Math.PI * 0.5;
+      link.scale.x = i % 2 === 0 ? 1 : 0.45;
+      elbow.add(link);
+      armLinks.push(link);
+    }
+
+    const clapper = new THREE.Object3D();
+    elbow.add(clapper);
+    const head = new THREE.Mesh(clapperGeometry, slateMat);
+    clapper.add(head);
+    const rim = new THREE.Mesh(clapperRimGeometry, porcelainMat);
+    rim.position.z = depth * 0.7;
+    clapper.add(rim);
+
+    return { pivot, links: armLinks, elbow, clapper };
+  }
+
+  const armFar = buildArm(-0.06, 0.77, zFarArm, ashMat);
+  const armLead = buildArm(0.1, 0.79, zNear, porcelainMat);
+
+  const furnaceLight = new THREE.PointLight(look.colorOf("bossFurnace"), 0, 1, 2);
+  group.add(furnaceLight);
+
+  rig.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (mesh.isMesh === true) mesh.layers.set(look.actorLayer);
+  });
   applyOutline(rig, tuning.feel.outlineThickness, look);
 
-  const scratch = new THREE.Color();
-  const amber = new THREE.Color(look.colorOf("bossFurnace"));
-  const danger = new THREE.Color(look.colorOf("danger"));
+  function progress(boss: Boss, t: number): number {
+    return clamp01((t - boss.stateStart) / (boss.stateUntil - boss.stateStart));
+  }
 
-  function progress(boss: Boss, t: number, durationMs: number): number {
-    const dur = Math.max(durationMs, 1) / 1000;
-    return clamp01(1 - (boss.stateUntil - t) / dur);
+  function layoutArm(arm: Arm, angle: number, extend: number): void {
+    const spacing = LINK_SPACING_REST + (LINK_SPACING_FULL - LINK_SPACING_REST) * clamp01(extend);
+    arm.pivot.rotation.z = angle;
+    let index = 0;
+    for (const link of arm.links) {
+      const inSegment = index % LINKS_PER_SEGMENT;
+      link.position.x = (inSegment + 0.5) * spacing;
+      index++;
+    }
+    arm.elbow.position.x = LINKS_PER_SEGMENT * spacing;
+    arm.clapper.position.x = LINKS_PER_SEGMENT * spacing + 0.11;
   }
 
   return {
@@ -244,129 +438,185 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
       let shellLift = boss.phase === 2 ? feel.bossShellLift * 0.35 : 0;
       let shellTilt = 0;
       let compress = 1;
-      let armAngle = armRest;
-      let armExtend = 0;
-      let armHeat = 0;
+      let leadAngle = armRest;
+      let farAngle = armRest + 0.14;
+      let leadExtend = 0;
+      let farExtend = 0;
+      let headSag = 0.14;
+      let visorHot = 0;
       let mouthHeat = 0;
       let mouthGlow = feel.bossFurnaceEmissive * (boss.phase === 2 ? 0.9 : 0.6);
       const breath =
-        1 + Math.sin(rt * feel.bellBreathSpeed) * feel.bellBreathAmount * (boss.phase === 2 ? 1.4 : 1);
+        1 +
+        Math.sin(rt * feel.bellBreathSpeed) * feel.bellBreathAmount * (boss.phase === 2 ? 1.4 : 1);
 
-      if (boss.state === "dormant" || boss.state === "idle") {
+      if (boss.state === "dormant") {
+        headSag = 0.34;
+        mouthGlow *= 0.7;
+      } else if (boss.state === "idle") {
+        headSag = 0.14 - Math.sin(rt * feel.bellBreathSpeed) * 0.018;
         mouthGlow *= breath;
       } else if (boss.state === "sweepTelegraph") {
-        const p = progress(boss, t, cfg.sweepTelegraphMs);
+        const p = progress(boss, t);
         shellTilt = tilt * p;
-        armAngle = armRest + (swing - armRest) * (p * p);
-        armExtend = 0.3 * p;
-        armHeat = 0.35 + 0.55 * p;
+        leadAngle = armRest + (swing - armRest) * (p * p);
+        leadExtend = 0.3 * p;
+        headSag = 0.14 - 0.12 * p;
+        visorHot = 0.35 + 0.65 * p;
         mouthHeat = p;
         mouthGlow = feel.bossFurnaceEmissive * (0.6 + feel.bellMouthFlare * p);
       } else if (boss.state === "sweepActive") {
-        const p = progress(boss, t, cfg.sweepActiveMs);
+        const p = progress(boss, t);
         shellTilt = tilt * (1 - p);
-        armAngle = swing + (-swing * 0.4 - swing) * Math.pow(p, 0.55);
-        armExtend = 0.3 + 0.7 * Math.pow(p, 0.4);
-        armHeat = 1;
+        leadAngle = swing + (-swing * 0.4 - swing) * Math.pow(p, 0.55);
+        leadExtend = 0.3 + 0.7 * Math.pow(p, 0.4);
+        headSag = 0.02;
+        visorHot = 1;
         mouthHeat = 1;
         mouthGlow = feel.bossFurnaceEmissive * (1 + feel.bellMouthFlare);
       } else if (boss.state === "sweepRecover") {
-        const p = progress(boss, t, cfg.sweepRecoveryMs);
-        armAngle = -swing * 0.4 + (armRest + swing * 0.4) * p;
-        armExtend = 1 - p;
-        armHeat = 0.9 * (1 - p);
+        const p = progress(boss, t);
+        leadAngle = -swing * 0.4 + (armRest + swing * 0.4) * p;
+        leadExtend = 1 - p;
+        headSag = 0.38 - 0.24 * p;
+        visorHot = 0;
         mouthHeat = 1 - p;
-        shellTilt = -THREE.MathUtils.degToRad(feel.bellRockDeg) * Math.sin(p * Math.PI * 3) * (1 - p);
+        shellTilt =
+          -THREE.MathUtils.degToRad(feel.bellRockDeg) * Math.sin(p * Math.PI * 3) * (1 - p);
         mouthGlow = feel.bossFurnaceEmissive * (0.9 + 0.6 * (1 - p)) * breath;
       } else if (boss.state === "stompTelegraph") {
-        const p = progress(boss, t, cfg.stompTelegraphMs);
+        const p = progress(boss, t);
         compress = 1 - (1 - feel.bellCompress) * p;
+        leadAngle = armRest + (swing * 0.75 - armRest) * p;
+        farAngle = armRest + (swing * 0.75 - armRest) * p;
+        leadExtend = 0.25 * p;
+        farExtend = 0.25 * p;
+        headSag = 0.14 - 0.1 * p;
+        visorHot = p;
         mouthHeat = p;
         mouthGlow = feel.bossFurnaceEmissive * (0.6 + feel.bellMouthFlare * p);
       } else if (boss.state === "stompRise") {
-        const p = progress(boss, t, cfg.stompRiseMs);
+        const p = progress(boss, t);
         compress = feel.bellCompress + (1.06 - feel.bellCompress) * p;
+        shellLift += feel.bossShellLift * p;
+        leadAngle = swing * 0.75;
+        farAngle = swing * 0.75;
+        leadExtend = 0.25;
+        farExtend = 0.25;
+        headSag = 0.02;
+        visorHot = 1;
         mouthHeat = 1;
         mouthGlow = feel.bossFurnaceEmissive * (1 + feel.bellMouthFlare);
       } else if (boss.state === "stompSlam") {
-        const p = progress(boss, t, cfg.stompSlamMs);
+        const p = progress(boss, t);
         compress = 1.06 - 0.24 * p;
+        shellLift += feel.bossShellLift * (1 - p);
+        leadAngle = swing * 0.75 + (-swing * 0.55 - swing * 0.75) * p;
+        farAngle = leadAngle;
+        leadExtend = 0.25 + 0.4 * p;
+        farExtend = leadExtend;
+        headSag = 0.1 + 0.2 * p;
+        visorHot = 1;
         mouthHeat = 1;
         mouthGlow = feel.bossFurnaceEmissive * (1 + feel.bellMouthFlare * 1.4);
       } else if (boss.state === "stompRecover") {
-        const p = progress(boss, t, cfg.stompRecoveryMs);
+        const p = progress(boss, t);
         compress = 0.82 + 0.18 * clamp01(p * 3);
         shellTilt =
           THREE.MathUtils.degToRad(feel.bellRockDeg) *
           Math.sin(p * Math.PI * feel.bellRockSpeed) *
           (1 - p);
+        leadAngle = -swing * 0.55 + (armRest + swing * 0.55) * clamp01(p * 1.6);
+        farAngle = leadAngle;
+        leadExtend = 0.65 * (1 - clamp01(p * 1.6));
+        farExtend = leadExtend;
+        headSag = 0.32 - 0.18 * p;
+        visorHot = 0;
         mouthHeat = 1 - clamp01(p * 2);
         mouthGlow = feel.bossFurnaceEmissive * (0.7 + 0.5 * (1 - p)) * breath;
       } else if (boss.state === "crack") {
-        const p = progress(boss, t, cfg.crackMs);
+        const p = progress(boss, t);
         shellLift = feel.bossShellLift * p;
         shellTilt = tilt * 0.7 * p;
+        headSag = 0.14 - 0.12 * p;
+        visorHot = p;
         mouthHeat = p * 0.6;
         mouthGlow = feel.bossFurnaceEmissive * (0.8 + 1.1 * p);
       } else if (boss.state === "dead") {
         shellLift = 0;
         shellTilt = tilt * 0.4;
         compress = 0.94;
-        armAngle = armRest - 0.25;
+        leadAngle = armRest - 0.25;
+        farAngle = armRest - 0.18;
+        headSag = 0.44;
+        visorHot = 0;
         mouthHeat = 0;
         mouthGlow = feel.bossFurnaceEmissive * 0.7 * breath;
       }
 
       group.position.set(x, y, 0);
-      rig.scale.set(cfg.width * boss.facing, cfg.height, cfg.width);
+      rig.scale.set(cfg.width * boss.facing, cfg.height, 1);
 
-      shellPivot.position.set(0, 0.24 + shellLift, 0);
+      bodyLift.position.y = shellLift;
+      shellPivot.position.set(0, 0.24, 0);
       shellPivot.rotation.z = -shellTilt;
-      shellScale.scale.set(1 + (1 - compress) * 0.5, compress, 1 + (1 - compress) * 0.5);
+      shellScale.position.set(0, -0.24, 0);
+      shellScale.scale.set(1 + (1 - compress) * 0.4, compress, 1);
 
-      armPivot.rotation.z = armAngle;
-      const armFull = 0.2 + cfg.sweepReach / Math.max(cfg.width, 0.1);
-      const armLength = 0.38 + (armFull - 0.38) * clamp01(armExtend);
-      arm.scale.set(armLength, 1, 1);
-      clapper.position.set(armLength + 0.1, 0, 0);
+      const reachUnits = cfg.sweepReach / Math.max(cfg.width, 0.1);
+      const fullSpan = LINKS_PER_SEGMENT * 2 * LINK_SPACING_FULL + 0.11;
+      const extendScale = clamp01(reachUnits / Math.max(fullSpan, 0.01));
+      layoutArm(armLead, leadAngle, leadExtend * extendScale);
+      layoutArm(armFar, farAngle, farExtend * extendScale);
+
+      headPivot.rotation.z = -headSag;
 
       const cracked = boss.phase === 2 || boss.state === "crack" || boss.state === "dead";
-      crack.visible = cracked;
+      crackGlow.visible = cracked;
       if (cracked) {
-        const open = boss.state === "crack" ? progress(boss, t, cfg.crackMs) : 1;
-        crack.scale.set(0.6 + 0.9 * open, 1, 1);
+        const open = boss.state === "crack" ? progress(boss, t) : 1;
+        crackGlow.scale.set(0.5 + 1.1 * open, 1, 1);
+        crackBack.scale.set(0.5 + 1.1 * open, 1, 1);
+      } else {
+        crackBack.scale.set(1, 1, 1);
       }
+      crackBack.position.set(crackRestX, crackRestY, zVoid);
 
       const flash = boss.flash < 0 ? 0 : boss.flash > 1 ? 1 : boss.flash;
-      const step = flash > 0.62 ? 1 : flash > 0.26 ? 0.5 : 0;
+      const flashStep = flash > 0.62 ? 1 : flash > 0.26 ? 0.5 : 0;
+      const whiten = Math.min(1, flashStep * feel.telegraphEmissive);
 
-      scratch.copy(amber).lerp(danger, mouthHeat).lerp(WHITE, step);
-      furnaceMat.color.copy(scratch);
-      furnaceMat.emissive.copy(scratch);
-      furnaceMat.emissiveIntensity = Math.min(1, mouthGlow + step * feel.telegraphEmissive);
+      scratch.copy(amber).lerp(danger, mouthHeat).lerp(WHITE, whiten);
+      mouthMat.color.copy(scratch);
 
-      shellMat.emissive.copy(WHITE);
-      shellMat.emissiveIntensity = step * 0.8;
+      scratch.copy(voidColor).lerp(danger, visorHot);
+      visorMat.color.copy(scratch);
 
-      const heatCap = Math.min(0.5, feel.bellHeatEmissive);
-      armMat.emissive.setHex(look.heat(clamp01(armHeat)));
-      armMat.emissiveIntensity = heatCap;
+      scratch.copy(charcoalBase).lerp(WHITE, whiten);
+      charcoalMat.color.copy(scratch);
+      scratch.copy(slateBase).lerp(WHITE, whiten);
+      slateMat.color.copy(scratch);
+      scratch.copy(ashBase).lerp(WHITE, whiten);
+      ashMat.color.copy(scratch);
 
-      const crackHeat = boss.state === "crack"
-        ? 0.5 + 0.45 * progress(boss, t, cfg.crackMs)
-        : boss.state === "dead"
-          ? 0.55
-          : 0.82;
-      crackMat.emissive.setHex(look.heat(crackHeat));
-      crackMat.emissiveIntensity = heatCap;
+      const crackHeat =
+        boss.state === "crack"
+          ? 0.5 + 0.45 * progress(boss, t)
+          : boss.state === "dead"
+            ? 0.55
+            : 0.82;
+      scratch.setHex(look.heat(crackHeat));
+      crackMat.color.copy(scratch).lerp(WHITE, Math.min(1, feel.bellHeatEmissive * 0.3));
 
-      furnaceLight.color.copy(scratch);
+      furnaceLight.color.copy(amber).lerp(danger, mouthHeat);
       furnaceLight.intensity = mouthGlow * feel.bossFurnaceLightScale;
       furnaceLight.distance = cfg.width * feel.bossFurnaceLightRange;
-      furnaceLight.position.set(0, cfg.height * 0.14, cfg.width * 0.42);
+      furnaceLight.position.set(0, cfg.height * 0.1, cfg.width * 0.2);
 
       const sway = THREE.MathUtils.degToRad(feel.chainSwayDeg) * 0.25;
-      chain.rotation.z = Math.sin(rt * feel.chainSwaySpeed) * sway + shellTilt * 0.3;
+      const swayAngle = Math.sin(rt * feel.chainSwaySpeed) * sway + shellTilt * 0.3;
+      chain.rotation.z = swayAngle;
+      for (const holder of shortChains) holder.rotation.z = swayAngle * 0.6;
     }
   };
 }

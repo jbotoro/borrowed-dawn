@@ -15,15 +15,163 @@ export interface PlayerMesh {
   ): void;
 }
 
+type Point = readonly [number, number];
+
 const BASE_WIDTH = 0.6;
 const BASE_HEIGHT = 1.2;
 
-const WAIST_Y = 0.5;
-const HIP_Y = 0.51;
-const HEAD_Y = 0.92;
-const SHOULDER_Y = 0.9;
-const THIGH_LEN = 0.21;
+const HIP_Y = 0.5;
+const SHOULDER_Y = 0.88;
+const NECK_Y = 0.94;
+const CAPE_Y = 1.02;
+const THIGH_LEN = 0.2;
 const SHIN_LEN = 0.2;
+const UPPER_LEN = 0.17;
+const FORE_LEN = 0.16;
+
+const WHITE = new THREE.Color(0xffffff);
+
+const TORSO: Point[] = [
+  [-0.09, 0.0],
+  [-0.13, 0.12],
+  [-0.19, 0.28],
+  [-0.24, 0.4],
+  [-0.21, 0.43],
+  [0.19, 0.43],
+  [0.26, 0.37],
+  [0.19, 0.24],
+  [0.12, 0.1],
+  [0.09, 0.0]
+];
+
+const COLLAR: Point[] = [
+  [-0.2, 0.4],
+  [0.2, 0.4],
+  [0.23, 0.45],
+  [-0.19, 0.45]
+];
+
+const CAPE: Point[] = [
+  [-0.16, 0.08],
+  [-0.1, 0.2],
+  [0.03, 0.23],
+  [0.17, 0.17],
+  [0.27, 0.05],
+  [0.19, 0.0],
+  [0.14, -0.08],
+  [0.18, -0.22],
+  [0.2, -0.4],
+  [0.18, -0.58],
+  [0.1, -0.65],
+  [0.02, -0.56],
+  [-0.08, -0.67],
+  [-0.18, -0.58],
+  [-0.26, -0.44],
+  [-0.3, -0.26],
+  [-0.27, -0.08],
+  [-0.22, 0.0]
+];
+
+const HEAD: Point[] = [
+  [-0.07, 0.01],
+  [-0.085, 0.09],
+  [-0.06, 0.17],
+  [0.0, 0.21],
+  [0.09, 0.2],
+  [0.15, 0.13],
+  [0.12, 0.05],
+  [0.07, 0.01]
+];
+
+const THIGH: Point[] = [
+  [-0.055, 0.02],
+  [0.055, 0.02],
+  [0.048, -THIGH_LEN],
+  [-0.048, -THIGH_LEN]
+];
+
+const SHIN: Point[] = [
+  [-0.046, 0.02],
+  [0.046, 0.02],
+  [0.04, -SHIN_LEN],
+  [-0.04, -SHIN_LEN]
+];
+
+const BOOT: Point[] = [
+  [-0.072, 0.0],
+  [0.058, 0.0],
+  [0.072, -0.03],
+  [0.134, -0.048],
+  [0.142, -0.086],
+  [0.13, -0.1],
+  [-0.072, -0.1],
+  [-0.078, -0.06]
+];
+
+const UPPER_ARM: Point[] = [
+  [-0.042, 0.03],
+  [0.042, 0.03],
+  [0.036, -UPPER_LEN],
+  [-0.036, -UPPER_LEN]
+];
+
+const FOREARM: Point[] = [
+  [-0.036, 0.02],
+  [0.036, 0.02],
+  [0.03, -FORE_LEN],
+  [-0.03, -FORE_LEN]
+];
+
+const NEEDLE: Point[] = [
+  [0.0, 0.05],
+  [0.55, 0.033],
+  [1.0, 0.011],
+  [1.0, -0.011],
+  [0.55, -0.033],
+  [0.0, -0.05]
+];
+
+const NEEDLE_TIP: Point[] = [
+  [0.9, 0.0176],
+  [1.0, 0.011],
+  [1.0, -0.011],
+  [0.9, -0.0176]
+];
+
+const FERRULE: Point[] = [
+  [-0.06, 0.036],
+  [0.035, 0.036],
+  [0.035, -0.036],
+  [-0.06, -0.036]
+];
+
+const LANTERN_FRAME: Point[] = [
+  [-0.058, 0.01],
+  [0.058, 0.01],
+  [0.058, -0.168],
+  [-0.058, -0.168]
+];
+
+const LANTERN_HOLE: Point[] = [
+  [-0.04, -0.022],
+  [0.04, -0.022],
+  [0.04, -0.148],
+  [-0.04, -0.148]
+];
+
+const LANTERN_GLASS: Point[] = [
+  [-0.04, -0.022],
+  [0.04, -0.022],
+  [0.04, -0.148],
+  [-0.04, -0.148]
+];
+
+const FLAME: Point[] = [
+  [0.0, -0.02],
+  [0.025, -0.078],
+  [0.0, -0.14],
+  [-0.025, -0.078]
+];
 
 function clamp01(value: number): number {
   if (value < 0) return 0;
@@ -37,119 +185,150 @@ function clampSigned(value: number): number {
   return value;
 }
 
-function coatProfile(): THREE.Vector2[] {
-  return [
-    new THREE.Vector2(0.2, WAIST_Y - 0.02),
-    new THREE.Vector2(0.195, WAIST_Y + 0.06),
-    new THREE.Vector2(0.225, WAIST_Y + 0.16),
-    new THREE.Vector2(0.25, WAIST_Y + 0.26),
-    new THREE.Vector2(0.255, WAIST_Y + 0.35),
-    new THREE.Vector2(0.235, WAIST_Y + 0.42),
-    new THREE.Vector2(0.16, WAIST_Y + 0.465),
-    new THREE.Vector2(0.1, WAIST_Y + 0.49)
-  ];
+function pathOf(points: Point[]): THREE.Path {
+  const path = new THREE.Path();
+  let first = true;
+  for (const point of points) {
+    if (first) {
+      path.moveTo(point[0], point[1]);
+      first = false;
+    } else {
+      path.lineTo(point[0], point[1]);
+    }
+  }
+  path.closePath();
+  return path;
 }
 
-function hemProfile(): THREE.Vector2[] {
-  return [
-    new THREE.Vector2(0.2, 0.03),
-    new THREE.Vector2(0.222, -0.06),
-    new THREE.Vector2(0.256, -0.14),
-    new THREE.Vector2(0.292, -0.2),
-    new THREE.Vector2(0.3, -0.235)
-  ];
+function ellipsePath(cx: number, cy: number, rx: number, ry: number): THREE.Path {
+  const path = new THREE.Path();
+  path.absellipse(cx, cy, rx, ry, 0, Math.PI * 2, false, 0);
+  return path;
 }
 
-function hoodProfile(): THREE.Vector2[] {
-  return [
-    new THREE.Vector2(0.118, -0.05),
-    new THREE.Vector2(0.152, 0.02),
-    new THREE.Vector2(0.162, 0.1),
-    new THREE.Vector2(0.15, 0.175),
-    new THREE.Vector2(0.118, 0.232),
-    new THREE.Vector2(0.066, 0.268),
-    new THREE.Vector2(0.018, 0.278)
-  ];
+function shapeOf(points: Point[], holes?: THREE.Path[]): THREE.Shape {
+  const shape = new THREE.Shape();
+  let first = true;
+  for (const point of points) {
+    if (first) {
+      shape.moveTo(point[0], point[1]);
+      first = false;
+    } else {
+      shape.lineTo(point[0], point[1]);
+    }
+  }
+  shape.closePath();
+  if (holes !== undefined) {
+    for (const hole of holes) shape.holes.push(hole);
+  }
+  return shape;
+}
+
+function plate(
+  points: Point[],
+  material: THREE.Material,
+  depth: number,
+  holes?: THREE.Path[]
+): THREE.Mesh {
+  const geometry = new THREE.ExtrudeGeometry(shapeOf(points, holes), {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 10
+  });
+  geometry.translate(0, 0, -depth * 0.5);
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  let cx = 0;
+  let cy = 0;
+  if (box !== null) {
+    cx = (box.min.x + box.max.x) * 0.5;
+    cy = (box.min.y + box.max.y) * 0.5;
+    geometry.translate(-cx, -cy, 0);
+  }
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(cx, cy, 0);
+  return mesh;
 }
 
 export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh {
   const group = new THREE.Group();
   group.name = "player";
 
-  const coatMat = look.litMaterial("actorCoat", {
-    emissiveIntensity: tuning.feel.playerCoatEmissive,
-    roughness: 0.82,
-    metalness: 0.1,
-    doubleSide: true
-  });
-  const hemMat = look.litMaterial("actorCoat", {
-    shade: 0.82,
-    emissiveIntensity: tuning.feel.playerCoatEmissive,
-    roughness: 0.85,
-    doubleSide: true
-  });
-  const hoodMat = look.material("actorCoat", {
-    shade: 0.86,
-    roughness: 0.85,
-    doubleSide: true
-  });
-  const shoulderMat = look.material("actorMetal", {
-    shade: 0.4,
-    roughness: 0.6,
-    metalness: 0.4,
-    doubleSide: true
-  });
-  const highlightMat = look.material("actorMetal", {
-    roughness: 0.5,
-    metalness: 0.2,
-    doubleSide: true
-  });
-  const limbMat = look.material("actorCoat", {
-    shade: 0.62,
-    roughness: 0.9,
-    doubleSide: true
-  });
-  const bootMat = look.material("actorCoat", {
-    shade: 0.42,
-    roughness: 0.95,
-    doubleSide: true
-  });
-  const metalMat = look.material("actorMetal", {
-    shade: 0.58,
-    roughness: 0.45,
-    metalness: 0.6,
-    doubleSide: true
-  });
-  const needleMat = look.litMaterial("actorMetal", {
-    shade: 0.34,
-    roughness: 0.35,
-    metalness: 0.7,
-    doubleSide: true
-  });
-  const voidMat = look.material("void", { unlit: true, fog: false });
-  const glassMat = look.litMaterial("actorGlass", {
-    emissiveIntensity: tuning.feel.playerEmissive,
-    roughness: 0.3,
-    doubleSide: true
-  });
-  glassMat.transparent = true;
-  glassMat.opacity = 0.62;
+  const depth = tuning.feel.actorPlateDepth;
+  const step = tuning.feel.actorPlateStep;
+  const zCape = -2 * step;
+  const zFar = -step;
+  const zBody = 0;
+  const zNear = step;
+  const zProp = 2 * step;
+
+  const slateMat = look.material("actorCoat", { unlit: true }) as THREE.MeshBasicMaterial;
+  const charcoalMat = look.material("bossShell", { unlit: true }) as THREE.MeshBasicMaterial;
+  const ashMat = look.material("ash", { unlit: true }) as THREE.MeshBasicMaterial;
+  const porcelainMat = look.material("actorMetal", { unlit: true }) as THREE.MeshBasicMaterial;
+  const voidMat = look.material("void", { unlit: true, fog: false }) as THREE.MeshBasicMaterial;
+  const glassMat = look.material("actorGlass", { unlit: true }) as THREE.MeshBasicMaterial;
   const flameMat = look.material("reward", { unlit: true }) as THREE.MeshBasicMaterial;
 
-  const flameBase = new THREE.Color(look.colorOf("reward"));
+  const slateBase = new THREE.Color(slateMat.color);
+  const charcoalBase = new THREE.Color(charcoalMat.color);
+  const ashBase = new THREE.Color(ashMat.color);
+  const porcelainBase = new THREE.Color(porcelainMat.color);
+  const glassBase = new THREE.Color(glassMat.color);
+  const flameBase = new THREE.Color(flameMat.color);
   const voidColor = new THREE.Color(look.colorOf("void"));
+  const tint = new THREE.Color();
+
+  const pinGeometry = new THREE.CircleGeometry(tuning.feel.actorPinRadius, 12);
+  function pin(x: number, y: number, z: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(pinGeometry, porcelainMat);
+    mesh.position.set(x, y, z);
+    return mesh;
+  }
 
   const rig = new THREE.Group();
   group.add(rig);
 
-  const thighGeometry = new THREE.BoxGeometry(0.1, THIGH_LEN, 0.13);
-  thighGeometry.translate(0, -THIGH_LEN * 0.5, 0);
-  const shinGeometry = new THREE.BoxGeometry(0.088, SHIN_LEN, 0.115);
-  shinGeometry.translate(0, -SHIN_LEN * 0.5, 0);
-  const bootGeometry = new THREE.BoxGeometry(0.17, 0.1, 0.24);
-  bootGeometry.translate(0.025, -0.05, 0.01);
-  const soleGeometry = new THREE.BoxGeometry(0.178, 0.022, 0.248);
-  soleGeometry.translate(0.025, -0.099, 0.01);
+  const torso = new THREE.Object3D();
+  torso.position.set(0, HIP_Y, 0);
+  rig.add(torso);
+
+  const capePivot = new THREE.Object3D();
+  capePivot.position.set(0, CAPE_Y - HIP_Y, zCape);
+  torso.add(capePivot);
+  const cape = plate(CAPE, charcoalMat, depth);
+  capePivot.add(cape);
+
+  const torsoPlate = plate(TORSO, slateMat, depth);
+  torsoPlate.position.z = zBody;
+  torso.add(torsoPlate);
+
+  const collar = plate(COLLAR, porcelainMat, depth * 0.8);
+  collar.position.z = zNear;
+  torso.add(collar);
+
+  const head = new THREE.Object3D();
+  head.position.set(0, NECK_Y - HIP_Y, 0);
+  head.rotation.z = -0.04;
+  torso.add(head);
+
+  const faceHole = ellipsePath(0.042, 0.115, 0.031, 0.058);
+  const headPlate = plate(HEAD, ashMat, depth, [faceHole]);
+  headPlate.position.z = zBody;
+  head.add(headPlate);
+
+  const faceVoid = plate(
+    [
+      [-0.02, 0.03],
+      [0.11, 0.03],
+      [0.11, 0.2],
+      [-0.02, 0.2]
+    ],
+    voidMat,
+    depth * 0.6
+  );
+  faceVoid.position.z = zFar;
+  head.add(faceVoid);
 
   interface Leg {
     hip: THREE.Object3D;
@@ -157,122 +336,81 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
     boot: THREE.Object3D;
   }
 
-  function buildLeg(side: number): Leg {
+  function buildLeg(x: number, z: number, material: THREE.MeshBasicMaterial): Leg {
     const hip = new THREE.Object3D();
-    hip.position.set(0.115 * side, HIP_Y, -0.03 * side);
-    const thigh = new THREE.Mesh(thighGeometry, limbMat);
-    hip.add(thigh);
+    hip.position.set(x, HIP_Y, z);
+    rig.add(hip);
+    hip.add(plate(THIGH, material, depth));
+    hip.add(pin(0, 0, depth * 0.6));
+
     const knee = new THREE.Object3D();
     knee.position.set(0, -THIGH_LEN, 0);
     hip.add(knee);
-    const shin = new THREE.Mesh(shinGeometry, limbMat);
-    knee.add(shin);
+    knee.add(plate(SHIN, material, depth));
+    knee.add(pin(0, 0, depth * 0.6));
+
     const boot = new THREE.Object3D();
     boot.position.set(0, -SHIN_LEN, 0);
     knee.add(boot);
-    boot.add(new THREE.Mesh(bootGeometry, bootMat));
-    boot.add(new THREE.Mesh(soleGeometry, highlightMat));
-    rig.add(hip);
+    boot.add(plate(BOOT, material, depth));
     return { hip, knee, boot };
   }
 
-  const legLead = buildLeg(1);
-  const legBack = buildLeg(-1);
+  const legBack = buildLeg(-0.05, zFar, slateMat);
+  const legLead = buildLeg(0.05, zNear, ashMat);
 
-  const torso = new THREE.Object3D();
-  torso.position.set(0, WAIST_Y, 0);
-  rig.add(torso);
+  function buildArm(x: number, z: number, material: THREE.MeshBasicMaterial): {
+    shoulder: THREE.Object3D;
+    elbow: THREE.Object3D;
+    hand: THREE.Object3D;
+  } {
+    const shoulder = new THREE.Object3D();
+    shoulder.position.set(x, SHOULDER_Y - HIP_Y, z);
+    torso.add(shoulder);
+    shoulder.add(plate(UPPER_ARM, material, depth));
+    shoulder.add(pin(0, 0, depth * 0.6));
 
-  const coat = new THREE.Mesh(new THREE.LatheGeometry(coatProfile(), 10), coatMat);
-  coat.position.set(0, -WAIST_Y, 0);
-  torso.add(coat);
+    const elbow = new THREE.Object3D();
+    elbow.position.set(0, -UPPER_LEN, 0);
+    shoulder.add(elbow);
+    elbow.add(plate(FOREARM, material, depth));
+    elbow.add(pin(0, 0, depth * 0.6));
 
-  const hemPivot = new THREE.Object3D();
-  hemPivot.position.set(0, 0.02, 0);
-  torso.add(hemPivot);
-  const hem = new THREE.Mesh(new THREE.LatheGeometry(hemProfile(), 10), hemMat);
-  hemPivot.add(hem);
+    const hand = new THREE.Object3D();
+    hand.position.set(0, -FORE_LEN, 0);
+    elbow.add(hand);
+    return { shoulder, elbow, hand };
+  }
 
-  const shoulder = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.07, 0.24), shoulderMat);
-  shoulder.position.set(0, SHOULDER_Y - WAIST_Y - 0.035, 0);
-  torso.add(shoulder);
-
-  const shoulderEdge = new THREE.Mesh(new THREE.BoxGeometry(0.475, 0.012, 0.245), highlightMat);
-  shoulderEdge.position.set(0, SHOULDER_Y - WAIST_Y + 0.006, 0);
-  torso.add(shoulderEdge);
-
-  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.145, 0.07, 8), hoodMat);
-  collar.position.set(0, SHOULDER_Y - WAIST_Y + 0.03, 0);
-  torso.add(collar);
-
-  const head = new THREE.Object3D();
-  head.position.set(0, HEAD_Y - WAIST_Y, 0);
-  head.rotation.z = 0.16;
-  torso.add(head);
-
-  const hood = new THREE.Mesh(new THREE.LatheGeometry(hoodProfile(), 10), hoodMat);
-  head.add(hood);
-
-  const hollow = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), voidMat);
-  hollow.position.set(0.085, -0.005, 0.1);
-  hollow.scale.set(0.92, 1.05, 0.92);
-  head.add(hollow);
-
-  const armGeometry = new THREE.BoxGeometry(0.082, 0.16, 0.092);
-  armGeometry.translate(0, -0.08, 0);
-  const forearmGeometry = new THREE.BoxGeometry(0.076, 0.15, 0.086);
-  forearmGeometry.translate(0, -0.075, 0);
-
-  const armOff = new THREE.Object3D();
-  armOff.position.set(-0.06, SHOULDER_Y - WAIST_Y + 0.01, 0.13);
+  const armOffParts = buildArm(-0.04, zFar, slateMat);
+  const armOff = armOffParts.shoulder;
+  const elbowOff = armOffParts.elbow;
   armOff.rotation.z = 0.15;
-  torso.add(armOff);
-  armOff.add(new THREE.Mesh(armGeometry, limbMat));
-
-  const elbowOff = new THREE.Object3D();
-  elbowOff.position.set(0, -0.16, 0);
   elbowOff.rotation.z = 1.15;
-  armOff.add(elbowOff);
-  elbowOff.add(new THREE.Mesh(forearmGeometry, limbMat));
-
-  const handOff = new THREE.Object3D();
-  handOff.position.set(0, -0.15, 0);
-  elbowOff.add(handOff);
 
   const lanternPivot = new THREE.Object3D();
-  lanternPivot.position.set(0, 0, 0.06);
-  handOff.add(lanternPivot);
+  lanternPivot.position.set(0, 0, zProp - zFar);
+  armOffParts.hand.add(lanternPivot);
 
   const lantern = new THREE.Group();
-  lantern.position.set(0, 0.082, 0);
+  lantern.position.set(0, 0.03, 0);
   lanternPivot.add(lantern);
 
-  const postGeometry = new THREE.BoxGeometry(0.018, 0.13, 0.018);
-  const postX = 0.043;
-  const postZ = 0.036;
-  for (let i = 0; i < 4; i++) {
-    const post = new THREE.Mesh(postGeometry, metalMat);
-    post.position.set(i < 2 ? postX : -postX, -0.078, i % 2 === 0 ? postZ : -postZ);
-    lantern.add(post);
-  }
-  const capTop = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.026, 0.1), metalMat);
-  capTop.position.set(0, -0.004, 0);
-  lantern.add(capTop);
-  const capBottom = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.024, 0.1), metalMat);
-  capBottom.position.set(0, -0.152, 0);
-  lantern.add(capBottom);
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.008, 4, 10), metalMat);
-  bail.position.set(0, 0.022, 0);
+  const lanternFrame = plate(LANTERN_FRAME, porcelainMat, depth, [pathOf(LANTERN_HOLE)]);
+  lantern.add(lanternFrame);
+
+  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.007, 4, 10), porcelainMat);
+  bail.position.set(0, 0.03, 0);
   lantern.add(bail);
 
-  const glass = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.116, 0.07), glassMat);
-  glass.position.set(0, -0.078, 0);
+  const glass = plate(LANTERN_GLASS, glassMat, depth * 0.7);
+  glass.position.z = depth * 0.6;
   lantern.add(glass);
 
-  const flame = new THREE.Mesh(new THREE.OctahedronGeometry(0.032, 0), flameMat);
-  flame.position.set(0, -0.078, 0);
-  flame.scale.set(0.8, 1.7, 0.8);
+  const flame = plate(FLAME, flameMat, depth * 0.5);
+  flame.position.z = depth * 1.1;
   lantern.add(flame);
+  const flameRestY = flame.position.y;
 
   const lanternLight = new THREE.PointLight(
     look.colorOf("reward"),
@@ -280,39 +418,29 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
     tuning.feel.playerLightDistance,
     2
   );
-  lanternLight.position.set(0, -0.078, 0.04);
+  lanternLight.position.set(0, -0.085, 2 * step);
   lantern.add(lanternLight);
 
-  const armLead = new THREE.Object3D();
-  armLead.position.set(0.05, SHOULDER_Y - WAIST_Y + 0.01, -0.1);
-  torso.add(armLead);
-  armLead.add(new THREE.Mesh(armGeometry, limbMat));
-
-  const elbowLead = new THREE.Object3D();
-  elbowLead.position.set(0, -0.16, 0);
-  armLead.add(elbowLead);
-  elbowLead.add(new THREE.Mesh(forearmGeometry, limbMat));
-
-  const hand = new THREE.Object3D();
-  hand.position.set(0, -0.15, 0);
-  elbowLead.add(hand);
+  const armLeadParts = buildArm(0.02, zNear, ashMat);
+  const armLead = armLeadParts.shoulder;
+  const elbowLead = armLeadParts.elbow;
 
   const weapon = new THREE.Object3D();
-  hand.add(weapon);
+  weapon.position.set(0, 0, zProp - zNear);
+  armLeadParts.hand.add(weapon);
 
-  const ferrule = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.072, 0.072), metalMat);
-  ferrule.position.set(0.02, 0, 0);
+  const ferrule = plate(FERRULE, porcelainMat, depth);
   weapon.add(ferrule);
 
-  const needleGeometry = new THREE.BoxGeometry(1, 0.042, 0.042);
-  needleGeometry.translate(0.5, 0, 0);
-  const needle = new THREE.Mesh(needleGeometry, needleMat);
-  weapon.add(needle);
+  const eye = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.008, 4, 10), porcelainMat);
+  eye.position.set(-0.058, 0, 0);
+  weapon.add(eye);
 
-  const tipGeometry = new THREE.ConeGeometry(0.036, 0.13, 4);
-  tipGeometry.rotateZ(-Math.PI * 0.5);
-  const needleTip = new THREE.Mesh(tipGeometry, highlightMat);
-  weapon.add(needleTip);
+  const needleScale = new THREE.Object3D();
+  needleScale.position.set(0.03, 0, 0);
+  weapon.add(needleScale);
+  needleScale.add(plate(NEEDLE, ashMat, depth * 0.7));
+  needleScale.add(plate(NEEDLE_TIP, porcelainMat, depth * 0.72));
 
   group.traverse((node) => {
     const mesh = node as THREE.Mesh;
@@ -401,7 +529,7 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
       rig.scale.set(
         live.player.width / BASE_WIDTH,
         live.player.height / BASE_HEIGHT,
-        live.player.width / BASE_WIDTH
+        1
       );
 
       const dashing = t < player.dashUntil;
@@ -431,7 +559,9 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
       squashY += (1 - squashY) * recover;
 
       const speed = Math.abs(player.vel.x);
-      const forward = clampSigned((player.vel.x * player.facing) / Math.max(live.player.walkSpeed, 0.01));
+      const forward = clampSigned(
+        (player.vel.x * player.facing) / Math.max(live.player.walkSpeed, 0.01)
+      );
       const running = player.grounded && speed > 0.4 && !dying;
 
       if (running) {
@@ -440,13 +570,17 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
         runPhase += dt * feel.legSwingSpeed * 0.15;
       }
 
-      const deathP = deathAt < 0 ? 0 : clamp01((t - deathAt) / (Math.max(feel.courierDeathCrumpleMs, 1) / 1000));
+      const deathP =
+        deathAt < 0
+          ? 0
+          : clamp01((t - deathAt) / (Math.max(feel.courierDeathCrumpleMs, 1) / 1000));
 
       let leanTarget = 0;
       if (dying) leanTarget = -THREE.MathUtils.degToRad(70) * deathP;
       else if (hurt) leanTarget = THREE.MathUtils.degToRad(feel.courierHurtRecoilDeg);
       else if (dashing) leanTarget = -THREE.MathUtils.degToRad(feel.courierLeanRunDeg * 1.8);
-      else if (!player.grounded) leanTarget = -THREE.MathUtils.degToRad(feel.courierLeanAirDeg) * forward;
+      else if (!player.grounded)
+        leanTarget = -THREE.MathUtils.degToRad(feel.courierLeanAirDeg) * forward;
       else leanTarget = -THREE.MathUtils.degToRad(feel.courierLeanRunDeg) * forward;
 
       if (attacking && !dying && !hurt) {
@@ -459,11 +593,12 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
       torso.rotation.z = lean;
 
       const twist = attacking && player.attackDir === "side" ? feel.courierAttackTwistDeg : 0;
-      const twistTarget = THREE.MathUtils.degToRad(twist) * (player.attackPhase === "windup" ? -1 : 1);
+      const twistTarget =
+        THREE.MathUtils.degToRad(twist) * (player.attackPhase === "windup" ? -1 : 1);
       torso.rotation.y += (twistTarget - torso.rotation.y) * Math.min(1, 16 * dt);
 
-      const breath = dying || running ? 0 : Math.sin(rt * feel.courierBreathSpeed) * feel.courierBreathAmount;
-      torso.scale.set(1 - breath * 0.4, 1 + breath, 1 - breath * 0.4);
+      const breath = dying || running ? 0 : Math.sin(rt * feel.courierBreathSpeed);
+      head.rotation.z = -0.04 + breath * feel.courierBreathAmount;
 
       const swing = THREE.MathUtils.degToRad(feel.legSwingDeg);
       const kneeBend = THREE.MathUtils.degToRad(feel.courierKneeBendDeg);
@@ -494,23 +629,27 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
         legBack.knee.rotation.z *= 0.78;
       }
 
-      legLead.boot.position.y = -SHIN_LEN + Math.max(0, -legLead.knee.rotation.z) * feel.courierBootLift;
-      legBack.boot.position.y = -SHIN_LEN + Math.max(0, -legBack.knee.rotation.z) * feel.courierBootLift;
+      legLead.boot.position.y =
+        -SHIN_LEN + Math.max(0, -legLead.knee.rotation.z) * feel.courierBootLift;
+      legBack.boot.position.y =
+        -SHIN_LEN + Math.max(0, -legBack.knee.rotation.z) * feel.courierBootLift;
       legLead.boot.rotation.z = -legLead.hip.rotation.z - legLead.knee.rotation.z;
       legBack.boot.rotation.z = -legBack.hip.rotation.z - legBack.knee.rotation.z;
 
       let hemTarget = -THREE.MathUtils.degToRad(feel.courierHemSwingDeg) * forward;
-      if (running) hemTarget += Math.sin(runPhase) * THREE.MathUtils.degToRad(feel.courierHemSwingDeg) * 0.3;
+      if (running) {
+        hemTarget += Math.sin(runPhase) * THREE.MathUtils.degToRad(feel.courierHemSwingDeg) * 0.3;
+      }
       if (dying) hemTarget = 0.3;
       const hemK = Math.max(feel.courierHemFollowPerSec, 0.1);
       hemVel += (hemTarget - hemAngle) * hemK * hemK * 0.5 * dt;
       hemVel *= Math.max(0, 1 - hemK * 0.62 * dt);
       hemAngle += hemVel * dt;
-      hemPivot.rotation.z = hemAngle;
+      capePivot.rotation.z = hemAngle;
 
       const airFlare = player.grounded || dying ? 0 : feel.courierHemFlareAir;
       const flare = dashing ? feel.courierHemFlareAir * 1.5 : airFlare;
-      hem.scale.set(1 + flare, 1 - flare * 0.35, 1 + flare);
+      cape.scale.set(1 + flare, 1 - flare * 0.35, 1);
 
       let lanternTarget = -THREE.MathUtils.degToRad(feel.courierLanternSwingDeg) * forward;
       if (dying) lanternTarget = 0.5;
@@ -529,7 +668,8 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
         else if (running) leadArmTarget = -Math.sin(runPhase) * armSwing;
         else leadArmTarget = 0;
       }
-      armLead.rotation.z += (leadArmTarget - armLead.rotation.z) * Math.min(1, (attacking ? 30 : 12) * dt);
+      armLead.rotation.z +=
+        (leadArmTarget - armLead.rotation.z) * Math.min(1, (attacking ? 30 : 12) * dt);
       elbowLead.rotation.z = attacking ? 0.12 : 0.3 - Math.abs(armLead.rotation.z) * 0.3;
 
       const offTarget = dying ? 0.7 : running ? 0.2 + Math.sin(runPhase) * armSwing * 0.35 : 0.2;
@@ -544,8 +684,7 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
         feel.needleRestLengthRatio *
         longwickRatio *
         (striking ? feel.needleActiveStretch : 1);
-      needle.scale.set(needleLength, 1, 1);
-      needleTip.position.set(needleLength + 0.055, 0, 0);
+      needleScale.scale.set(needleLength, 1, 1);
 
       let base = 0;
       if (player.attackDir === "up") base = Math.PI * 0.5;
@@ -568,7 +707,8 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
           scaleY *= crouch;
           scaleXZ /= crouch;
         } else {
-          const hang = 1 - clamp01(Math.abs(player.vel.y) / Math.max(live.player.jumpVelocity, 0.01));
+          const hang =
+            1 - clamp01(Math.abs(player.vel.y) / Math.max(live.player.jumpVelocity, 0.01));
           const stretch = 1 + (feel.courierApexStretch - 1) * hang;
           scaleY *= stretch;
           scaleXZ /= stretch;
@@ -584,7 +724,7 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
       }
       if (running) scaleY *= 1 + Math.sin(runPhase * 2) * feel.courierRunBobAmp;
 
-      group.scale.set(scaleXZ * player.facing, scaleY, scaleXZ);
+      group.scale.set(scaleXZ * player.facing, scaleY, 1);
 
       const flicker =
         1 +
@@ -593,38 +733,47 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
           feel.flickerAmount;
 
       let lampScale = 1;
+      let lampBright = feel.playerEmissive * flicker;
       let lampIntensity = feel.playerLightIntensity * flicker;
-      let lampEmissive = feel.playerEmissive * flicker;
 
       if (dying) {
         const gutter = clamp01((t - deathAt) / (Math.max(feel.courierGutterMs, 1) / 1000));
         const sputter = 1 - gutter + Math.max(0, Math.sin(t * 26)) * (1 - gutter) * 0.5;
-        lampScale = Math.max(0.05, sputter);
+        lampScale = Math.max(0.02, sputter);
+        lampBright = feel.playerEmissive * sputter;
         lampIntensity = feel.playerLightIntensity * sputter * 0.8;
-        lampEmissive = feel.playerEmissive * sputter;
-        flameMat.color.copy(flameBase).lerp(voidColor, gutter * 0.85);
+        flameMat.color.copy(flameBase).lerp(voidColor, clamp01(gutter * 1.1));
+        glassMat.color.copy(glassBase).lerp(charcoalBase, clamp01(gutter * 1.15));
       } else {
         flameMat.color.copy(flameBase);
+        glassMat.color.copy(glassBase).lerp(WHITE, clamp01((lampBright - 0.5) * 0.7));
       }
 
       const invulnerable = t < player.invulnerableUntil && !dashing && !dying;
+      let bodyTint = 0;
       if (invulnerable) {
         const period = Math.max(feel.blinkPeriodMs, 1) / 1000;
         const on = Math.floor(t / period) % 2 === 0;
-        lampEmissive = on ? feel.playerEmissive : feel.blinkEmissive;
+        bodyTint = on ? 0 : 0.62;
+        lampBright = on ? feel.playerEmissive : feel.blinkEmissive;
         lampIntensity = on ? feel.playerLightIntensity : feel.playerLightIntensity * 0.25;
-        needleMat.emissiveIntensity = on ? 0.12 : 0.02;
-      } else {
-        needleMat.emissiveIntensity = 0.12;
+        glassMat.color.copy(glassBase).lerp(WHITE, clamp01((lampBright - 0.5) * 0.7));
       }
 
-      flame.scale.set(0.8 * lampScale, 1.7 * lampScale, 0.8 * lampScale);
-      glassMat.emissiveIntensity = lampEmissive;
+      const lift = clamp01(feel.playerCoatEmissive);
+      tint.copy(slateBase).lerp(porcelainBase, lift).lerp(voidColor, bodyTint);
+      slateMat.color.copy(tint);
+      tint.copy(charcoalBase).lerp(porcelainBase, lift).lerp(voidColor, bodyTint);
+      charcoalMat.color.copy(tint);
+      tint.copy(ashBase).lerp(voidColor, bodyTint);
+      ashMat.color.copy(tint);
+      tint.copy(porcelainBase).lerp(voidColor, bodyTint);
+      porcelainMat.color.copy(tint);
+
+      flame.scale.set(lampScale, lampScale, 1);
+      flame.position.y = flameRestY - (1 - lampScale) * 0.02;
       lanternLight.intensity = lampIntensity;
       lanternLight.distance = feel.playerLightDistance;
-
-      coatMat.emissiveIntensity = feel.playerCoatEmissive;
-      hemMat.emissiveIntensity = feel.playerCoatEmissive;
     }
   };
 }

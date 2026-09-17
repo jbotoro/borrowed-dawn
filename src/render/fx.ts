@@ -262,17 +262,22 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
     y: number,
     w: number,
     h: number,
-    fillOpacity: number,
-    edgeOpacity: number
+    progress: number,
+    edgeFraction: number,
+    peakOpacity: number
   ): void {
+    const span = Math.max(edgeFraction, 0.001);
+    if (progress >= span) {
+      mark.group.visible = false;
+      return;
+    }
     mark.group.visible = true;
     mark.group.position.set(0, 0, MARK_Z);
     const cx = x + w * 0.5;
     const cy = y + h * 0.5;
-    mark.fill.position.set(cx, cy, 0);
-    mark.fill.scale.set(Math.max(w, 0.001), Math.max(h, 0.001), 1);
-    mark.fillMaterial.opacity = fillOpacity;
-    mark.edgeMaterial.opacity = edgeOpacity;
+    mark.fill.visible = false;
+    mark.fillMaterial.opacity = 0;
+    mark.edgeMaterial.opacity = peakOpacity * (1 - progress / span);
     const tk = MARK_THICKNESS;
     const bottom = mark.edges[0];
     const top = mark.edges[1];
@@ -603,8 +608,9 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
           ey,
           cfg.width + lunge,
           cfg.height,
-          0.006 + 0.012 * p,
-          feel.fxMarkOpacity * (0.35 + 0.65 * p)
+          p,
+          feel.telegraphEdgeFraction,
+          feel.fxMarkOpacity
         );
       }
       for (let i = markIndex; i < MARK_SLOTS; i++) {
@@ -614,8 +620,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
 
       const boss = state.boss;
       if (boss !== null && boss.state === "sweepTelegraph") {
-        const dur = Math.max(live.boss.sweepTelegraphMs, 1) / 1000;
-        const p = clamp01(1 - (boss.stateUntil - t) / dur);
+        const p = clamp01((t - boss.stateStart) / (boss.stateUntil - boss.stateStart));
         const w = live.boss.sweepReach;
         const h = live.boss.height * live.boss.sweepHeightRatio;
         const x =
@@ -628,8 +633,9 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
           boss.pos.y,
           w,
           h,
-          0.01 + 0.03 * p,
-          feel.fxMarkOpacity * (0.4 + 0.6 * p)
+          p,
+          feel.telegraphEdgeFraction,
+          feel.fxMarkOpacity
         );
       } else {
         sweepMark.group.visible = false;
@@ -639,16 +645,19 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
         boss !== null &&
         (boss.state === "stompTelegraph" || boss.state === "stompRise" || boss.state === "stompSlam")
       ) {
-        const dur = Math.max(live.boss.stompTelegraphMs, 1) / 1000;
-        const p = boss.state === "stompTelegraph" ? clamp01(1 - (boss.stateUntil - t) / dur) : 1;
+        const p =
+          boss.state === "stompTelegraph"
+            ? clamp01((t - boss.stateStart) / (boss.stateUntil - boss.stateStart))
+            : 1;
         placeMark(
           stompMark,
           boss.pos.x - live.boss.width * 0.5,
           boss.pos.y,
           live.boss.width,
           live.boss.height,
-          0.004 + 0.01 * p,
-          feel.fxMarkOpacity * (0.3 + 0.7 * p)
+          p,
+          feel.telegraphEdgeFraction,
+          feel.fxMarkOpacity
         );
       } else {
         stompMark.group.visible = false;

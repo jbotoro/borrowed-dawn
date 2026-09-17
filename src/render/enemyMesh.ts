@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Tuning } from "../tuning";
 import type { Enemy, EnemyKind } from "../game/types";
-import type { LitMaterial, LookProfile } from "./look";
+import type { LookProfile } from "./look";
 import { applyOutline } from "./look";
 
 export interface EnemyMeshes {
@@ -9,24 +9,143 @@ export interface EnemyMeshes {
   sync(enemies: Enemy[], alpha: number, t: number, tuning: Tuning): void;
 }
 
+type Point = readonly [number, number];
+
 const WHITE = new THREE.Color(0xffffff);
 
-interface EnemyView {
-  id: number;
-  kind: EnemyKind;
-  group: THREE.Group;
-  lean: THREE.Object3D;
-  body: THREE.Object3D;
-  bodyMat: LitMaterial;
-  accentMat: LitMaterial;
-  accentBase: THREE.Color;
-  accentHot: THREE.Color;
-  bodyBase: THREE.Color;
-  deadAt: number;
-  squash: number;
-  seen: boolean;
-  wasGrounded: boolean;
-}
+const GUARD_BODY: Point[] = [
+  [-0.3, 0.3],
+  [-0.33, 0.5],
+  [-0.3, 0.66],
+  [-0.22, 0.74],
+  [0.14, 0.74],
+  [0.28, 0.68],
+  [0.33, 0.52],
+  [0.3, 0.34],
+  [0.14, 0.22],
+  [-0.12, 0.24]
+];
+
+const GUARD_HELM: Point[] = [
+  [-0.2, 0.7],
+  [-0.23, 0.83],
+  [-0.16, 0.94],
+  [0.03, 0.98],
+  [0.19, 0.92],
+  [0.24, 0.8],
+  [0.19, 0.7]
+];
+
+const GUARD_VISOR: Point[] = [
+  [-0.15, 0.81],
+  [0.19, 0.815],
+  [0.2, 0.865],
+  [-0.15, 0.86]
+];
+
+const GUARD_VISOR_BACK: Point[] = [
+  [-0.18, 0.79],
+  [0.23, 0.795],
+  [0.24, 0.885],
+  [-0.18, 0.88]
+];
+
+const GUARD_GORGET: Point[] = [
+  [-0.235, 0.685],
+  [0.235, 0.685],
+  [0.27, 0.735],
+  [-0.2, 0.735]
+];
+
+const GUARD_LEG: Point[] = [
+  [-0.075, 0.02],
+  [0.075, 0.02],
+  [0.085, -0.16],
+  [0.145, -0.19],
+  [0.15, -0.27],
+  [-0.115, -0.27],
+  [-0.11, -0.18],
+  [-0.085, -0.15]
+];
+
+const GUARD_ARM: Point[] = [
+  [-0.055, 0.03],
+  [0.055, 0.03],
+  [0.048, -0.24],
+  [-0.048, -0.24]
+];
+
+const GUARD_BLADE: Point[] = [
+  [0.0, 0.055],
+  [0.3, 0.095],
+  [0.35, 0.005],
+  [0.28, -0.05],
+  [0.0, -0.05]
+];
+
+const GUARD_BLADE_EDGE: Point[] = [
+  [0.0, -0.05],
+  [0.28, -0.05],
+  [0.35, 0.005],
+  [0.3, 0.012],
+  [0.26, -0.022],
+  [0.0, -0.022]
+];
+
+const STOMPER_DRUM: Point[] = [
+  [-0.38, 0.3],
+  [-0.4, 0.78],
+  [-0.32, 0.9],
+  [0.32, 0.9],
+  [0.4, 0.78],
+  [0.4, 0.3],
+  [0.32, 0.22],
+  [-0.32, 0.22]
+];
+
+const STOMPER_BAND_LOW: Point[] = [
+  [-0.4, 0.4],
+  [0.4, 0.4],
+  [0.4, 0.435],
+  [-0.4, 0.435]
+];
+
+const STOMPER_BAND_HIGH: Point[] = [
+  [-0.4, 0.72],
+  [0.4, 0.72],
+  [0.4, 0.755],
+  [-0.4, 0.755]
+];
+
+const STOMPER_CHIMNEY: Point[] = [
+  [-0.1, 0.86],
+  [0.1, 0.86],
+  [0.09, 1.0],
+  [-0.09, 1.0]
+];
+
+const STOMPER_GLOW: Point[] = [
+  [-0.15, 0.0],
+  [0.15, 0.0],
+  [0.2, 0.25],
+  [-0.2, 0.25]
+];
+
+const STOMPER_FOOT: Point[] = [
+  [-0.11, 0.24],
+  [0.11, 0.24],
+  [0.13, 0.05],
+  [0.13, 0.0],
+  [-0.13, 0.0],
+  [-0.13, 0.05]
+];
+
+const STOMPER_TOE: Point[] = [
+  [-0.13, 0.0],
+  [0.13, 0.0],
+  [0.13, 0.035],
+  [-0.13, 0.035]
+];
 
 function clamp01(value: number): number {
   if (value < 0) return 0;
@@ -40,163 +159,210 @@ function flashStep(flash: number): number {
   return 0;
 }
 
+function shapeOf(points: Point[], holes?: THREE.Path[]): THREE.Shape {
+  const shape = new THREE.Shape();
+  let first = true;
+  for (const point of points) {
+    if (first) {
+      shape.moveTo(point[0], point[1]);
+      first = false;
+    } else {
+      shape.lineTo(point[0], point[1]);
+    }
+  }
+  shape.closePath();
+  if (holes !== undefined) {
+    for (const hole of holes) shape.holes.push(hole);
+  }
+  return shape;
+}
+
+function pathOf(points: Point[]): THREE.Path {
+  const path = new THREE.Path();
+  let first = true;
+  for (const point of points) {
+    if (first) {
+      path.moveTo(point[0], point[1]);
+      first = false;
+    } else {
+      path.lineTo(point[0], point[1]);
+    }
+  }
+  path.closePath();
+  return path;
+}
+
+function plate(
+  points: Point[],
+  material: THREE.Material,
+  depth: number,
+  holes?: THREE.Path[]
+): THREE.Mesh {
+  const geometry = new THREE.ExtrudeGeometry(shapeOf(points, holes), {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 8
+  });
+  geometry.translate(0, 0, -depth * 0.5);
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  let cx = 0;
+  let cy = 0;
+  if (box !== null) {
+    cx = (box.min.x + box.max.x) * 0.5;
+    cy = (box.min.y + box.max.y) * 0.5;
+    geometry.translate(-cx, -cy, 0);
+  }
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(cx, cy, 0);
+  return mesh;
+}
+
+interface EnemyView {
+  id: number;
+  kind: EnemyKind;
+  group: THREE.Group;
+  stack: THREE.Object3D;
+  lean: THREE.Object3D;
+  body: THREE.Object3D;
+  head: THREE.Object3D | null;
+  arm: THREE.Object3D | null;
+  hips: THREE.Object3D[];
+  feet: THREE.Object3D[];
+  slateMat: THREE.MeshBasicMaterial;
+  ashMat: THREE.MeshBasicMaterial;
+  accentMat: THREE.MeshBasicMaterial;
+  slateBase: THREE.Color;
+  ashBase: THREE.Color;
+  accentBase: THREE.Color;
+  accentHot: THREE.Color;
+  deadAt: number;
+  squash: number;
+  phase: number;
+  seen: boolean;
+  wasGrounded: boolean;
+}
+
 export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshes {
   const group = new THREE.Group();
   group.name = "enemies";
 
-  const plateGeometry = new THREE.BoxGeometry(0.68, 0.46, 0.56);
-  const bandGeometry = new THREE.BoxGeometry(0.72, 0.07, 0.6);
-  const pauldronGeometry = new THREE.BoxGeometry(0.82, 0.1, 0.62);
-  const helmGeometry = new THREE.BoxGeometry(0.44, 0.24, 0.4);
-  const helmCrestGeometry = new THREE.BoxGeometry(0.46, 0.035, 0.42);
-  const visorGeometry = new THREE.BoxGeometry(0.3, 0.06, 0.05);
-  const rivetGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.05);
-  const footGeometry = new THREE.BoxGeometry(0.24, 0.13, 0.32);
-  const armGeometry = new THREE.BoxGeometry(0.14, 0.3, 0.16);
-  const bladeGeometry = new THREE.BoxGeometry(0.34, 0.11, 0.06);
-  const bladeEdgeGeometry = new THREE.BoxGeometry(0.34, 0.024, 0.066);
-  const bladeTipGeometry = new THREE.ConeGeometry(0.07, 0.16, 4);
-  bladeTipGeometry.rotateZ(-Math.PI * 0.5);
+  const depth = tuning.feel.actorPlateDepth;
+  const step = tuning.feel.actorPlateStep;
 
-  const boilerGeometry = new THREE.SphereGeometry(0.42, 12, 8);
-  const strapGeometry = new THREE.TorusGeometry(0.425, 0.028, 4, 14);
-  const capGeometry = new THREE.CylinderGeometry(0.16, 0.2, 0.09, 8);
-  const blockFootGeometry = new THREE.BoxGeometry(0.22, 0.16, 0.28);
-  const glowGeometry = new THREE.SphereGeometry(0.26, 10, 6, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5);
+  const porcelainMat = look.material("actorMetal", { unlit: true }) as THREE.MeshBasicMaterial;
+  const pinGeometry = new THREE.CircleGeometry(tuning.feel.actorPinRadius, 12);
 
-  const ironProto = look.litMaterial("enemyBody", {
-    roughness: 0.85,
-    metalness: 0.2,
-    doubleSide: true
-  });
-  const plateDark = look.material("enemyBody", { shade: 0.62, roughness: 0.9, doubleSide: true });
-  const rivetMat = look.material("actorMetal", {
-    shade: 0.56,
-    roughness: 0.5,
-    metalness: 0.6,
-    doubleSide: true
-  });
-  const edgeMat = look.material("actorMetal", { roughness: 0.4, metalness: 0.5, doubleSide: true });
-  const bladeMat = look.material("actorMetal", {
-    shade: 0.46,
-    roughness: 0.4,
-    metalness: 0.7,
-    doubleSide: true
-  });
-  const visorProto = look.litMaterial("enemyAccent", {
-    emissiveColor: look.heat(0),
-    emissiveIntensity: tuning.feel.bellHeatEmissive,
-    roughness: 0.4,
-    doubleSide: true
-  });
-  const glowProto = look.litMaterial("reward", {
-    emissiveColor: look.heat(0.8),
-    emissiveIntensity: tuning.feel.bellHeatEmissive,
-    roughness: 0.5,
-    doubleSide: true
-  });
-
-  const views: EnemyView[] = [];
-  const scratch = new THREE.Color();
+  const slateProto = look.material("enemyBody", { unlit: true }) as THREE.MeshBasicMaterial;
+  const ashProto = look.material("ash", { unlit: true }) as THREE.MeshBasicMaterial;
   const visorRest = new THREE.Color(look.colorOf("ash", tuning.feel.guardVisorRestShade));
   const visorHot = new THREE.Color(look.colorOf("enemyAccent"));
   const glowRest = new THREE.Color(look.colorOf("reward"));
   const glowHot = new THREE.Color(look.colorOf("danger"));
 
+  const views: EnemyView[] = [];
+  const scratch = new THREE.Color();
+
+  function pin(x: number, y: number, z: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(pinGeometry, porcelainMat);
+    mesh.position.set(x, y, z);
+    return mesh;
+  }
+
   function buildGuard(): EnemyView {
     const root = new THREE.Group();
+    const stack = new THREE.Object3D();
+    root.add(stack);
     const lean = new THREE.Object3D();
-    lean.position.set(0, 0.16, 0);
-    root.add(lean);
+    lean.position.set(0, 0.24, 0);
+    stack.add(lean);
 
-    const bodyMat = ironProto.clone() as LitMaterial;
-    const accentMat = visorProto.clone() as LitMaterial;
+    const slateMat = slateProto.clone();
+    const ashMat = ashProto.clone();
+    const accentMat = slateProto.clone();
+    accentMat.color.copy(visorRest);
 
     const body = new THREE.Object3D();
+    body.position.set(0, -0.24, 0);
     lean.add(body);
 
-    const plate = new THREE.Mesh(plateGeometry, bodyMat);
-    plate.position.set(0, 0.3, 0);
-    body.add(plate);
+    const bodyPlate = plate(GUARD_BODY, slateMat, depth);
+    body.add(bodyPlate);
 
-    const band = new THREE.Mesh(bandGeometry, plateDark);
-    band.position.set(0, 0.36, 0.01);
-    body.add(band);
+    const gorget = plate(GUARD_GORGET, porcelainMat, depth * 0.8);
+    gorget.position.z = step;
+    body.add(gorget);
 
-    for (let i = 0; i < 6; i++) {
-      const rivet = new THREE.Mesh(rivetGeometry, rivetMat);
-      const side = i < 3 ? -1 : 1;
-      const row = i % 3;
-      rivet.position.set(side * 0.28, 0.14 + row * 0.16, 0.29);
-      body.add(rivet);
+    const rivetX: number[] = [-0.17, 0.0, 0.17];
+    for (const rx of rivetX) body.add(pin(rx, 0.44, depth * 0.6));
+
+    const head = new THREE.Object3D();
+    head.position.set(0, 0.72, 0);
+    body.add(head);
+    const helmPlate = plate(GUARD_HELM, ashMat, depth, [pathOf(GUARD_VISOR)]);
+    helmPlate.position.y -= 0.72;
+    head.add(helmPlate);
+    const visorBackHead = plate(GUARD_VISOR_BACK, accentMat, depth * 0.55);
+    visorBackHead.position.y -= 0.72;
+    visorBackHead.position.z = -step * 0.6;
+    head.add(visorBackHead);
+
+    const hips: THREE.Object3D[] = [];
+    const legSpecs: [number, number, THREE.MeshBasicMaterial][] = [
+      [-0.13, -step, slateMat],
+      [0.13, step, ashMat]
+    ];
+    for (const [lx, lz, mat] of legSpecs) {
+      const hip = new THREE.Object3D();
+      hip.position.set(lx, 0.27, lz);
+      stack.add(hip);
+      hip.add(plate(GUARD_LEG, mat, depth));
+      hips.push(hip);
     }
 
-    const pauldron = new THREE.Mesh(pauldronGeometry, plateDark);
-    pauldron.position.set(0, 0.56, 0);
-    body.add(pauldron);
-
-    const pauldronEdge = new THREE.Mesh(new THREE.BoxGeometry(0.83, 0.02, 0.63), edgeMat);
-    pauldronEdge.position.set(0, 0.615, 0);
-    body.add(pauldronEdge);
-
-    const helm = new THREE.Mesh(helmGeometry, bodyMat);
-    helm.position.set(0, 0.73, 0);
-    body.add(helm);
-
-    const helmCrest = new THREE.Mesh(helmCrestGeometry, plateDark);
-    helmCrest.position.set(0, 0.86, 0);
-    body.add(helmCrest);
-
-    const visor = new THREE.Mesh(visorGeometry, accentMat);
-    visor.position.set(0.09, 0.72, 0.21);
-    body.add(visor);
-
-    const visorHood = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.06), plateDark);
-    visorHood.position.set(0.09, 0.775, 0.215);
-    body.add(visorHood);
-
-    const arm = new THREE.Mesh(armGeometry, plateDark);
-    arm.position.set(0.3, 0.42, 0.16);
-    arm.rotation.z = -0.35;
+    const arm = new THREE.Object3D();
+    arm.position.set(0.1, 0.62, step);
     body.add(arm);
+    arm.add(plate(GUARD_ARM, ashMat, depth));
+    arm.add(pin(0, 0, depth * 0.6));
 
-    const blade = new THREE.Mesh(bladeGeometry, bladeMat);
-    blade.position.set(0.55, 0.3, 0.16);
-    blade.rotation.z = -0.14;
-    body.add(blade);
-
-    const bladeEdge = new THREE.Mesh(bladeEdgeGeometry, edgeMat);
-    bladeEdge.position.set(0.55, 0.354, 0.16);
-    bladeEdge.rotation.z = -0.14;
-    body.add(bladeEdge);
-
-    const bladeTip = new THREE.Mesh(bladeTipGeometry, edgeMat);
-    bladeTip.position.set(0.75, 0.272, 0.16);
-    bladeTip.rotation.z = -0.14;
-    body.add(bladeTip);
-
-    const footL = new THREE.Mesh(footGeometry, plateDark);
-    footL.position.set(-0.17, 0.068, 0.02);
-    root.add(footL);
-    const footR = new THREE.Mesh(footGeometry, plateDark);
-    footR.position.set(0.17, 0.068, -0.02);
-    root.add(footR);
+    const hand = new THREE.Object3D();
+    hand.position.set(0, -0.24, step);
+    arm.add(hand);
+    hand.rotation.z = -0.4;
+    hand.add(plate(GUARD_BLADE, accentMat, depth));
+    const bladeEdge = plate(GUARD_BLADE_EDGE, porcelainMat, depth * 0.7);
+    bladeEdge.position.z = depth * 0.7;
+    hand.add(bladeEdge);
 
     group.add(root);
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh === true) mesh.layers.set(look.actorLayer);
+    });
     applyOutline(root, tuning.feel.outlineThickness, look);
+
     return {
       id: -1,
       kind: "guard",
       group: root,
+      stack,
       lean,
       body,
-      bodyMat,
+      head,
+      arm,
+      hips,
+      feet: [],
+      slateMat,
+      ashMat,
       accentMat,
+      slateBase: new THREE.Color(slateProto.color),
+      ashBase: new THREE.Color(ashProto.color),
       accentBase: visorRest,
       accentHot: visorHot,
-      bodyBase: new THREE.Color(look.colorOf("enemyBody")),
       deadAt: 0,
       squash: 1,
+      phase: 0,
       seen: false,
       wasGrounded: true
     };
@@ -204,73 +370,84 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
 
   function buildStomper(): EnemyView {
     const root = new THREE.Group();
+    const stack = new THREE.Object3D();
+    root.add(stack);
     const lean = new THREE.Object3D();
-    root.add(lean);
+    lean.position.set(0, 0.22, 0);
+    stack.add(lean);
 
-    const bodyMat = ironProto.clone() as LitMaterial;
-    const accentMat = glowProto.clone() as LitMaterial;
+    const slateMat = slateProto.clone();
+    const ashMat = ashProto.clone();
+    const accentMat = slateProto.clone();
+    accentMat.color.copy(glowRest);
 
     const body = new THREE.Object3D();
-    body.position.set(0, 0.16, 0);
+    body.position.set(0, -0.22, 0);
     lean.add(body);
 
-    const boiler = new THREE.Mesh(boilerGeometry, bodyMat);
-    boiler.position.set(0, 0.42, 0);
-    boiler.scale.set(1, 0.92, 1);
-    body.add(boiler);
+    body.add(plate(STOMPER_DRUM, slateMat, depth));
 
-    const strap = new THREE.Mesh(strapGeometry, plateDark);
-    strap.position.set(0, 0.42, 0);
-    strap.rotation.x = Math.PI * 0.5;
-    body.add(strap);
+    const bandLow = plate(STOMPER_BAND_LOW, porcelainMat, depth * 0.8);
+    bandLow.position.z = step;
+    body.add(bandLow);
+    const bandHigh = plate(STOMPER_BAND_HIGH, porcelainMat, depth * 0.8);
+    bandHigh.position.z = step;
+    body.add(bandHigh);
 
-    const strapVertical = new THREE.Mesh(strapGeometry, plateDark);
-    strapVertical.position.set(0, 0.42, 0);
-    strapVertical.rotation.y = Math.PI * 0.5;
-    body.add(strapVertical);
+    const chimney = plate(STOMPER_CHIMNEY, ashMat, depth);
+    body.add(chimney);
 
-    for (let i = 0; i < 6; i++) {
-      const rivet = new THREE.Mesh(rivetGeometry, rivetMat);
-      const angle = (i / 6) * Math.PI * 2;
-      rivet.position.set(Math.cos(angle) * 0.3, 0.42 + Math.sin(angle) * 0.3, 0.29);
-      body.add(rivet);
+    const rivets = Math.max(2, Math.round(tuning.feel.boilerRivets));
+    for (let i = 0; i < rivets; i++) {
+      const rx = -0.28 + (0.56 * i) / Math.max(rivets - 1, 1);
+      body.add(pin(rx, 0.56, depth * 0.6));
     }
 
-    const cap = new THREE.Mesh(capGeometry, plateDark);
-    cap.position.set(0, 0.82, 0);
-    body.add(cap);
-
-    const capEdge = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.02, 8), edgeMat);
-    capEdge.position.set(0, 0.87, 0);
-    body.add(capEdge);
-
-    const glow = new THREE.Mesh(glowGeometry, accentMat);
-    glow.position.set(0, 0.16, 0);
-    glow.scale.set(1, 0.7, 1);
+    const glow = plate(STOMPER_GLOW, accentMat, depth * 0.7);
+    glow.position.z = -step;
     body.add(glow);
 
-    const footL = new THREE.Mesh(blockFootGeometry, plateDark);
-    footL.position.set(-0.22, 0.08, 0.02);
-    root.add(footL);
-    const footR = new THREE.Mesh(blockFootGeometry, plateDark);
-    footR.position.set(0.22, 0.08, -0.02);
-    root.add(footR);
+    const feet: THREE.Object3D[] = [];
+    const footX: number[] = [-0.24, 0.24];
+    for (const fx of footX) {
+      const foot = new THREE.Object3D();
+      foot.position.set(fx, 0, step);
+      stack.add(foot);
+      foot.add(plate(STOMPER_FOOT, ashMat, depth));
+      const toe = plate(STOMPER_TOE, porcelainMat, depth * 0.7);
+      toe.position.z = depth * 0.7;
+      foot.add(toe);
+      feet.push(foot);
+    }
 
     group.add(root);
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh === true) mesh.layers.set(look.actorLayer);
+    });
     applyOutline(root, tuning.feel.outlineThickness, look);
+
     return {
       id: -1,
       kind: "stomper",
       group: root,
+      stack,
       lean,
       body,
-      bodyMat,
+      head: null,
+      arm: null,
+      hips: [],
+      feet,
+      slateMat,
+      ashMat,
       accentMat,
+      slateBase: new THREE.Color(slateProto.color),
+      ashBase: new THREE.Color(ashProto.color),
       accentBase: glowRest,
       accentHot: glowHot,
-      bodyBase: new THREE.Color(look.colorOf("enemyBody")),
       deadAt: 0,
       squash: 1,
+      phase: 0,
       seen: false,
       wasGrounded: true
     };
@@ -327,11 +504,13 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         }
 
         const flash = enemy.flash < 0 ? 0 : enemy.flash > 1 ? 1 : enemy.flash;
-        const step = flashStep(flash);
-        const recoil = step * feel.enemyRecoilDistance * -enemy.facing;
+        const step2 = flashStep(flash);
+        const recoil = step2 * feel.enemyRecoilDistance * -enemy.facing;
 
         view.group.visible = true;
         view.group.position.set(x + recoil, y, 0);
+        view.stack.scale.z = 0.2 + 0.8 * fade;
+        view.stack.position.z = -(1 - fade) * step;
 
         if (enemy.kind === "stomper") {
           const landed = enemy.grounded && !view.wasGrounded;
@@ -346,53 +525,99 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         view.group.scale.set(
           size.width * enemy.facing * fade * squashXZ,
           size.height * fade * squashY,
-          size.width * squashXZ
+          1
         );
 
         const leanAmount = THREE.MathUtils.degToRad(feel.enemyLeanDeg);
+        const moving = Math.abs(enemy.vel.x) > 0.2;
+        if (moving && enemy.state === "patrol") {
+          view.phase += dt * feel.legSwingSpeed * 0.42;
+        }
+
         let leanTarget = 0;
         let drop = 0;
+        let armTarget = 0.6;
+        let headTarget = 0;
         if (enemy.state === "telegraph") {
           leanTarget = leanAmount;
+          const dur = Math.max(live.guard.telegraphMs, 1) / 1000;
+          const p = clamp01(1 - (enemy.stateUntil - t) / dur);
+          armTarget = 0.6 + 2.0 * p;
+          headTarget = -0.06 * p;
         } else if (enemy.state === "attack") {
           leanTarget = -leanAmount * 1.2;
+          armTarget = 0.3;
         } else if (enemy.state === "recover") {
           leanTarget = THREE.MathUtils.degToRad(feel.guardSlumpDeg) * 0.5;
           drop = -0.05;
+          armTarget = 0.12;
+          headTarget = THREE.MathUtils.degToRad(feel.guardSlumpDeg);
         } else if (enemy.state === "hurt") {
           leanTarget = leanAmount * 0.8;
+          armTarget = 0.75;
+        } else if (moving) {
+          leanTarget = leanAmount * 0.25 + Math.sin(view.phase * 2) * leanAmount * 0.16;
+          armTarget = 0.6 + Math.sin(view.phase) * 0.18;
         }
-        view.lean.rotation.z += (leanTarget - view.lean.rotation.z) * follow;
-        const restY = enemy.kind === "stomper" ? 0.16 : 0;
-        view.body.position.y += (drop + restY - view.body.position.y) * follow;
 
-        const idleHeat = enemy.kind === "stomper" ? 0.8 : 0.12;
-        let heat = idleHeat;
+        if (enemy.kind === "stomper") leanTarget = 0;
+        view.lean.rotation.z += (leanTarget - view.lean.rotation.z) * follow;
+        const restY = enemy.kind === "stomper" ? -0.22 : -0.24;
+        const bob = moving && enemy.state === "patrol" ? Math.abs(Math.cos(view.phase)) * 0.03 : 0;
+        view.body.position.y += (drop + restY + bob - view.body.position.y) * follow;
+
+        const arm = view.arm;
+        if (arm !== null) arm.rotation.z += (armTarget - arm.rotation.z) * follow;
+        const head = view.head;
+        if (head !== null) head.rotation.z += (headTarget - head.rotation.z) * follow;
+
+        const swing = THREE.MathUtils.degToRad(feel.enemyLeanDeg) * 0.9;
+        let hipIndex = 0;
+        for (const hip of view.hips) {
+          const target =
+            moving && enemy.state === "patrol"
+              ? Math.sin(view.phase + hipIndex * Math.PI) * swing
+              : 0;
+          hip.rotation.z += (target - hip.rotation.z) * follow;
+          hipIndex++;
+        }
+
+        let footIndex = 0;
+        for (const foot of view.feet) {
+          const dir = footIndex === 0 ? -1 : 1;
+          const airborne = !enemy.grounded;
+          const tuck = airborne ? 0.05 : 0;
+          const spread = airborne ? -0.04 : (1 - view.squash) * 0.28;
+          foot.position.y += (tuck - foot.position.y) * follow;
+          foot.rotation.z += (dir * (airborne ? 0.3 : 0) - foot.rotation.z) * follow;
+          const restX = 0.24 * dir;
+          foot.position.x += (restX + spread * dir - foot.position.x) * follow;
+          footIndex++;
+        }
+
         let hot = 0;
         if (enemy.state === "telegraph") {
           const dur = Math.max(live.guard.telegraphMs, 1) / 1000;
           const p = clamp01(1 - (enemy.stateUntil - t) / dur);
-          heat = idleHeat + (1 - idleHeat) * (0.4 + 0.6 * p);
           hot = 0.4 + 0.6 * p;
         } else if (enemy.state === "attack") {
-          heat = 1;
           hot = 1;
         } else if (enemy.kind === "stomper" && !enemy.grounded) {
-          heat = 1;
           hot = 1;
-        } else if (enemy.state === "hurt") {
-          heat = idleHeat + 0.1;
         }
 
-        scratch.copy(view.accentBase).lerp(view.accentHot, hot).lerp(WHITE, step);
-        view.accentMat.color.copy(scratch);
-        view.accentMat.emissive.setHex(look.heat(clamp01(heat)));
-        view.accentMat.emissiveIntensity = Math.min(0.5, feel.bellHeatEmissive) + step * 0.4;
+        if (enemy.kind === "stomper" && (!enemy.alive || enemy.state === "dead")) hot = 0;
 
-        scratch.copy(view.bodyBase).lerp(WHITE, step);
-        view.bodyMat.color.copy(scratch);
-        view.bodyMat.emissive.copy(WHITE);
-        view.bodyMat.emissiveIntensity = step * 0.9;
+        scratch.copy(view.accentBase).lerp(view.accentHot, hot).lerp(WHITE, step2);
+        if (enemy.kind === "stomper" && (!enemy.alive || enemy.state === "dead")) {
+          scratch.lerp(view.slateBase, 1 - fade);
+        }
+        view.accentMat.color.copy(scratch);
+
+        scratch.copy(view.slateBase).lerp(WHITE, step2);
+        view.slateMat.color.copy(scratch);
+        scratch.copy(view.ashBase).lerp(WHITE, step2);
+        view.ashMat.color.copy(scratch);
       }
 
       for (const view of views) {

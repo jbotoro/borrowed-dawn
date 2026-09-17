@@ -53,6 +53,8 @@ A passage is an opening in a wall mass at least 1.2 units thick: an arch or a li
 
 ## Actors
 
+Construction moved to `docs/actor-sheet.md` on 2026-09-17 (tin puppets: flat layered plates, pins at the joints, unlit). The part lists and poses below still describe what each actor carries and does; the construction sheet says how it is built.
+
 Courier (1.2 units tall, collision unchanged): hooded coat with a clear shoulder line and a hem that swings with movement; the lantern held at the chest in the off hand, a small glass box with a visible amber flame, the only warm light on the player; the wick needle in the lead hand held low, one body length; boots that visibly contact the ground. Reads at 60 pixels tall as one value against void. Motion: run cycle with leg swing and coat sway, anticipation crouch on jump, a real arc on attack, recoil on hurt, a crumple and lantern gutter on death. Nothing bobs while standing still.
 
 Bellkeeper: a cracked bell shell (porcelain rim, slate body, void interior) hanging from a yoke by a chain, a furnace mouth at its base, one striking arm ending in a clapper head. Heavy when still (arm hanging, faint breath in the mouth). Sweep wind-up: shell tilts back, arm rises, mouth goes vermilion. Stomp: shell compresses, mouth flares. Recovery: shell rocks, mouth open and amber. Phase two: the crack opens and glows.
