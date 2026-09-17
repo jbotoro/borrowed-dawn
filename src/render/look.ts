@@ -124,6 +124,36 @@ export const RAMP: Ramp = {
   amber: 0xffb648
 };
 
+export const TINT_RAMP: Ramp = {
+  void: 0x060911,
+  charcoal: 0x121b2c,
+  slate: 0x3c444e,
+  ash: 0x8a867d,
+  porcelain: 0xefe3cb,
+  vermilion: 0xff4b35,
+  amber: 0xffb648
+};
+
+const grainAmountUniform = { value: 0.35 };
+const grainActorUniform = { value: 0.12 };
+const grainScaleUniform = { value: 1 };
+const grainContrastUniform = { value: 1.8 };
+const grainNormalizerUniform = { value: 0.82 };
+
+export function syncLookUniforms(
+  textureGrain: number,
+  textureScale: number,
+  textureContrast: number,
+  textureNormalizer: number
+): void {
+  const amount = Math.min(Math.max(textureGrain, 0), 1);
+  grainAmountUniform.value = amount;
+  grainActorUniform.value = amount * 0.34;
+  grainScaleUniform.value = Math.max(textureScale, 0.05);
+  grainContrastUniform.value = Math.max(textureContrast, 0);
+  grainNormalizerUniform.value = Math.max(textureNormalizer, 0.05);
+}
+
 const PALE_RIM = 0xcad5df;
 const EMBER = RAMP.amber;
 const DANGER = RAMP.vermilion;
@@ -243,6 +273,237 @@ function glassTexture(): THREE.CanvasTexture | null {
   return toTexture(ctx);
 }
 
+const GRAIN_SIZE = 256;
+
+function hashLattice(x: number, y: number, seed: number): number {
+  let h = x * 374761393 + y * 668265263 + seed * 1442695040;
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+function smooth(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+function periodicNoise(x: number, y: number, period: number, seed: number): number {
+  const fx = x * period;
+  const fy = y * period;
+  const ix = Math.floor(fx);
+  const iy = Math.floor(fy);
+  const tx = smooth(fx - ix);
+  const ty = smooth(fy - iy);
+  const x0 = ((ix % period) + period) % period;
+  const y0 = ((iy % period) + period) % period;
+  const x1 = (x0 + 1) % period;
+  const y1 = (y0 + 1) % period;
+  const a = hashLattice(x0, y0, seed);
+  const b = hashLattice(x1, y0, seed);
+  const c = hashLattice(x0, y1, seed);
+  const d = hashLattice(x1, y1, seed);
+  const top = a + (b - a) * tx;
+  const bottom = c + (d - c) * tx;
+  return top + (bottom - top) * ty;
+}
+
+function fbm(x: number, y: number, seed: number, octaves: number[]): number {
+  let sum = 0;
+  let weight = 0;
+  let amp = 1;
+  for (const period of octaves) {
+    sum += periodicNoise(x, y, period, seed + period) * amp;
+    weight += amp;
+    amp *= 0.55;
+  }
+  return sum / weight;
+}
+
+function wrappedDraw(ctx: CanvasRenderingContext2D, draw: (dx: number, dy: number) => void): void {
+  const s = GRAIN_SIZE;
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oy = -1; oy <= 1; oy++) {
+      draw(ox * s, oy * s);
+    }
+  }
+}
+
+function grainTexture(ctx: CanvasRenderingContext2D): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(ctx.canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function stoneGrain(): THREE.CanvasTexture | null {
+  const ctx = makeContext(GRAIN_SIZE);
+  if (ctx === null) return null;
+  const image = ctx.createImageData(GRAIN_SIZE, GRAIN_SIZE);
+  const data = image.data;
+  for (let y = 0; y < GRAIN_SIZE; y++) {
+    for (let x = 0; x < GRAIN_SIZE; x++) {
+      const u = x / GRAIN_SIZE;
+      const v = y / GRAIN_SIZE;
+      const coarse = fbm(u, v, 11, [4, 8, 16]);
+      const fine = fbm(u, v, 29, [32, 64]);
+      const value = 0.62 + coarse * 0.24 + fine * 0.14;
+      const byte = Math.round(Math.min(Math.max(value, 0), 1) * 255);
+      const i = (y * GRAIN_SIZE + x) * 4;
+      data[i] = byte;
+      data[i + 1] = byte;
+      data[i + 2] = byte;
+      data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+
+  ctx.lineCap = "round";
+  for (let i = 0; i < 22; i++) {
+    const x = hashLattice(i, 3, 91) * GRAIN_SIZE;
+    const y = hashLattice(i, 7, 91) * GRAIN_SIZE;
+    const len = 12 + hashLattice(i, 11, 91) * 46;
+    const angle = hashLattice(i, 13, 91) * Math.PI;
+    const dark = hashLattice(i, 17, 91) > 0.5;
+    ctx.strokeStyle = dark ? "rgba(58,58,58,0.30)" : "rgba(235,235,235,0.22)";
+    ctx.lineWidth = 0.8 + hashLattice(i, 19, 91) * 2.2;
+    wrappedDraw(ctx, (dx, dy) => {
+      ctx.beginPath();
+      ctx.moveTo(x + dx, y + dy);
+      ctx.lineTo(x + dx + Math.cos(angle) * len, y + dy + Math.sin(angle) * len);
+      ctx.stroke();
+    });
+  }
+  for (let i = 0; i < 14; i++) {
+    const x = hashLattice(i, 23, 77) * GRAIN_SIZE;
+    const y = hashLattice(i, 29, 77) * GRAIN_SIZE;
+    const r = 2 + hashLattice(i, 31, 77) * 6;
+    ctx.fillStyle = "rgba(40,40,40,0.24)";
+    wrappedDraw(ctx, (dx, dy) => {
+      ctx.beginPath();
+      ctx.ellipse(x + dx, y + dy, r, r * 0.6, hashLattice(i, 37, 77) * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  return grainTexture(ctx);
+}
+
+function metalGrain(): THREE.CanvasTexture | null {
+  const ctx = makeContext(GRAIN_SIZE);
+  if (ctx === null) return null;
+  const image = ctx.createImageData(GRAIN_SIZE, GRAIN_SIZE);
+  const data = image.data;
+  for (let y = 0; y < GRAIN_SIZE; y++) {
+    for (let x = 0; x < GRAIN_SIZE; x++) {
+      const u = x / GRAIN_SIZE;
+      const v = y / GRAIN_SIZE;
+      const streak = fbm(u * 6, v * 0.35, 5, [8, 16, 32]);
+      const speck = fbm(u, v, 41, [64]);
+      const value = 0.66 + streak * 0.24 + speck * 0.1;
+      const byte = Math.round(Math.min(Math.max(value, 0), 1) * 255);
+      const i = (y * GRAIN_SIZE + x) * 4;
+      data[i] = byte;
+      data[i + 1] = byte;
+      data[i + 2] = byte;
+      data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+
+  for (let i = 0; i < 18; i++) {
+    const x = hashLattice(i, 5, 53) * GRAIN_SIZE;
+    const y = hashLattice(i, 9, 53) * GRAIN_SIZE;
+    const r = 2.4 + hashLattice(i, 15, 53) * 2.2;
+    wrappedDraw(ctx, (dx, dy) => {
+      const grad = ctx.createRadialGradient(x + dx - r * 0.3, y + dy - r * 0.3, 0, x + dx, y + dy, r);
+      grad.addColorStop(0, "rgba(255,255,255,0.34)");
+      grad.addColorStop(0.62, "rgba(150,150,150,0.14)");
+      grad.addColorStop(1, "rgba(48,48,48,0.30)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  return grainTexture(ctx);
+}
+
+function paperGrain(): THREE.CanvasTexture | null {
+  const ctx = makeContext(GRAIN_SIZE);
+  if (ctx === null) return null;
+  const image = ctx.createImageData(GRAIN_SIZE, GRAIN_SIZE);
+  const data = image.data;
+  for (let y = 0; y < GRAIN_SIZE; y++) {
+    for (let x = 0; x < GRAIN_SIZE; x++) {
+      const u = x / GRAIN_SIZE;
+      const v = y / GRAIN_SIZE;
+      const fibre = fbm(u, v, 61, [32, 64]);
+      const speck = hashLattice(x, y, 97);
+      const value = 0.68 + fibre * 0.18 + speck * 0.08;
+      const byte = Math.round(Math.min(Math.max(value, 0), 1) * 255);
+      const i = (y * GRAIN_SIZE + x) * 4;
+      data[i] = byte;
+      data[i + 1] = byte;
+      data[i + 2] = byte;
+      data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  return grainTexture(ctx);
+}
+
+const GRAIN_ROLES: Partial<Record<PaletteRole, TextureKind>> = {
+  void: "stone",
+  ash: "stone",
+  architecture: "stone",
+  backgroundNear: "stone",
+  backgroundFar: "stone",
+  rimEdge: "stone",
+  chain: "metal",
+  bossShell: "metal",
+  actorMetal: "metal",
+  actorCoat: "metal",
+  enemyBody: "metal"
+};
+
+function injectGrain(
+  material: THREE.Material,
+  map: THREE.Texture,
+  amount: { value: number },
+  worldSpace: boolean
+): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uGrainMap = { value: map };
+    shader.uniforms.uGrainAmount = amount;
+    shader.uniforms.uGrainScale = grainScaleUniform;
+    shader.uniforms.uGrainContrast = grainContrastUniform;
+    shader.uniforms.uGrainNormalizer = grainNormalizerUniform;
+    shader.vertexShader = ("varying vec3 vGrainPos;\n" + shader.vertexShader).replace(
+      "#include <begin_vertex>",
+      "#include <begin_vertex>\n  vGrainPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;"
+    );
+    const uv = worldSpace
+      ? "vec2 gUv = vGrainPos.xy * 0.11 * uGrainScale;"
+      : "vec2 gUv = vGrainPos.xy * 0.35 * uGrainScale;";
+    shader.fragmentShader = (
+      "varying vec3 vGrainPos;\nuniform sampler2D uGrainMap;\nuniform float uGrainAmount;\nuniform float uGrainScale;\nuniform float uGrainContrast;\nuniform float uGrainNormalizer;\n" +
+      shader.fragmentShader
+    ).replace(
+      "#include <map_fragment>",
+      [
+        uv,
+        "vec3 gTex = texture2D( uGrainMap, gUv ).rgb / uGrainNormalizer;",
+        "gTex = vec3( 1.0 ) + ( gTex - vec3( 1.0 ) ) * uGrainContrast;",
+        "vec3 gMul = clamp( mix( vec3( 1.0 ), gTex, uGrainAmount ), vec3( 0.35 ), vec3( 1.6 ) );",
+        "diffuseColor.rgb *= pow( gMul, vec3( 2.2 ) );"
+      ].join("\n")
+    );
+  };
+  material.customProgramCacheKey = (): string => (worldSpace ? "omr-grain-world" : "omr-grain-local");
+  material.needsUpdate = true;
+}
+
 function gradientMap(bands: number, levels: number[] | null): THREE.DataTexture {
   const count = Math.max(2, Math.min(Math.round(bands), 8));
   const texels = levels === null ? count : levels.length;
@@ -302,6 +563,8 @@ interface LookSeed {
   smooth: boolean;
   specular: boolean;
   toonLevels: number[] | null;
+  grain?: boolean;
+  ramp?: Ramp;
 }
 
 const seeds: Record<LookId, LookSeed> = {
@@ -445,38 +708,39 @@ const seeds: Record<LookId, LookSeed> = {
     id: "c",
     name: "Graphic monochrome",
     palette: {
-      void: RAMP.void,
-      ash: RAMP.ash,
-      architecture: RAMP.slate,
-      rimEdge: RAMP.porcelain,
-      backgroundNear: RAMP.charcoal,
-      backgroundFar: 0x0d1117,
-      actorCoat: RAMP.slate,
-      actorMetal: RAMP.porcelain,
-      actorGlass: RAMP.amber,
-      enemyBody: RAMP.slate,
-      enemyAccent: RAMP.vermilion,
-      bossShell: RAMP.charcoal,
-      bossFurnace: RAMP.amber,
-      chain: RAMP.ash,
-      danger: RAMP.vermilion,
-      reward: RAMP.amber
+      void: TINT_RAMP.void,
+      ash: TINT_RAMP.ash,
+      architecture: TINT_RAMP.slate,
+      rimEdge: TINT_RAMP.porcelain,
+      backgroundNear: TINT_RAMP.charcoal,
+      backgroundFar: 0x0b1019,
+      actorCoat: TINT_RAMP.slate,
+      actorMetal: TINT_RAMP.porcelain,
+      actorGlass: TINT_RAMP.amber,
+      enemyBody: TINT_RAMP.slate,
+      enemyAccent: TINT_RAMP.vermilion,
+      bossShell: TINT_RAMP.charcoal,
+      bossFurnace: TINT_RAMP.amber,
+      chain: TINT_RAMP.ash,
+      danger: TINT_RAMP.vermilion,
+      reward: TINT_RAMP.amber
     },
+    ramp: TINT_RAMP,
     lights: {
-      hemiSky: RAMP.ash,
-      hemiGround: RAMP.void,
+      hemiSky: TINT_RAMP.ash,
+      hemiGround: TINT_RAMP.void,
       hemiIntensity: 0.55,
-      key: { color: 0xffffff, intensity: 0.62, x: -3, y: 14, z: 7 },
-      fill: { color: RAMP.ash, intensity: 0.12, x: 9, y: 2, z: 10 },
+      key: { color: 0xfff4e6, intensity: 0.62, x: -3, y: 14, z: 7 },
+      fill: { color: 0x8fa6c4, intensity: 0.12, x: 9, y: 2, z: 10 },
       rim: null,
       spot: null
     },
-    fog: { enabled: true, nearScale: 1, farScale: 1, saturation: 0, colorOverride: RAMP.void },
+    fog: { enabled: true, nearScale: 1, farScale: 1, saturation: 0, colorOverride: TINT_RAMP.void },
     postfx: {
       bloomScale: 0.1,
       vignetteScale: 1.5,
-      outlineActors: true,
-      outlineArchitecture: true,
+      outlineActors: false,
+      outlineArchitecture: false,
       toon: true,
       toneMapped: false
     },
@@ -488,6 +752,7 @@ const seeds: Record<LookId, LookSeed> = {
     ambienceIntensityScale: 1,
     rigMix: 1,
     textured: false,
+    grain: true,
     smooth: false,
     specular: false,
     toonLevels: [0.55, 0.55, 0.55, 0.55, 0.86, 0.86, 0.86, 1.0]
@@ -501,12 +766,29 @@ function buildProfile(seed: LookSeed, bands: number): LookProfile {
   let ramp: THREE.DataTexture | null = null;
   let outlineMat: THREE.Material | null = null;
 
+  let grainStone: THREE.CanvasTexture | null = null;
+  let grainMetal: THREE.CanvasTexture | null = null;
+  let grainPaper: THREE.CanvasTexture | null = null;
+
   if (seed.textured) {
     stone = stoneTexture();
     metal = metalTexture();
     glass = glassTexture();
   }
+  if (seed.grain === true) {
+    grainStone = stoneGrain();
+    grainMetal = metalGrain();
+    grainPaper = paperGrain();
+  }
   if (seed.postfx.toon) ramp = gradientMap(bands, seed.toonLevels);
+
+  function grainFor(role: PaletteRole, requested?: TextureKind): THREE.CanvasTexture | null {
+    if (seed.grain !== true) return null;
+    const kind = requested !== undefined && requested !== "none" ? requested : GRAIN_ROLES[role];
+    if (kind === "stone") return grainStone;
+    if (kind === "metal") return grainMetal;
+    return null;
+  }
 
   function textureFor(kind: TextureKind): THREE.CanvasTexture | null {
     if (!seed.textured) return null;
@@ -535,11 +817,15 @@ function buildProfile(seed: LookSeed, bands: number): LookProfile {
     const fog = opts.fog === undefined ? true : opts.fog;
 
     if (opts.unlit === true) {
-      return new THREE.MeshBasicMaterial({ color: hex, side, fog });
+      const basic = new THREE.MeshBasicMaterial({ color: hex, side, fog });
+      if (grainPaper !== null && opts.fog !== false) {
+        injectGrain(basic, grainPaper, grainActorUniform, false);
+      }
+      return basic;
     }
 
     if (seed.postfx.toon && ramp !== null) {
-      return new THREE.MeshToonMaterial({
+      const toon = new THREE.MeshToonMaterial({
         color: hex,
         gradientMap: ramp,
         emissive: emissiveColor,
@@ -547,6 +833,9 @@ function buildProfile(seed: LookSeed, bands: number): LookProfile {
         side,
         fog
       });
+      const grain = grainFor(role, opts.texture);
+      if (grain !== null) injectGrain(toon, grain, grainAmountUniform, true);
+      return toon;
     }
 
     const map = textureFor(opts.texture === undefined ? "none" : opts.texture);
@@ -624,7 +913,7 @@ function buildProfile(seed: LookSeed, bands: number): LookProfile {
     if (!seed.postfx.outlineActors && !seed.postfx.outlineArchitecture) return null;
     if (outlineMat === null) {
       outlineMat = new THREE.MeshBasicMaterial({
-        color: RAMP.void,
+        color: seed.palette.void,
         side: THREE.BackSide,
         fog: false
       });
@@ -636,7 +925,7 @@ function buildProfile(seed: LookSeed, bands: number): LookProfile {
     id: seed.id,
     name: seed.name,
     palette: seed.palette,
-    ramp: RAMP,
+    ramp: seed.ramp === undefined ? RAMP : seed.ramp,
     lights: seed.lights,
     fog: seed.fog,
     postfx: seed.postfx,
@@ -699,6 +988,10 @@ export function resolveLookId(): LookId {
     if (raw === "a" || raw === "b" || raw === "c" || raw === "baseline") id = raw;
   }
   return id;
+}
+
+export function inkColor(): number {
+  return seeds[resolveLookId()].palette.void;
 }
 
 export function resolveLook(bands: number): LookProfile {
