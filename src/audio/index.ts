@@ -1,5 +1,5 @@
 import type { Tuning } from "../tuning";
-import type { GameEvent, GameState, Room } from "../game/types";
+import type { EnemyKind, EnemyState, GameEvent, GameState, Room } from "../game/types";
 import type { Synth } from "./synth";
 import { createSynth } from "./synth";
 import type { Bed, BedId } from "./music";
@@ -34,10 +34,6 @@ interface BedSlot {
   stopAt: number | null;
 }
 
-const LOOKAHEAD = 0.45;
-const MUTE_RAMP = 0.06;
-const PAUSE_DUCK = 0.5;
-
 function bedForRoom(room: Room, dawn: boolean): BedId {
   if (room.music === "reserve") return "reserve";
   let id: BedId;
@@ -46,6 +42,20 @@ function bedForRoom(room: Room, dawn: boolean): BedId {
   else id = room.bossArena === undefined ? "cinder" : "bellkeeper";
   return dawn && id === "cinder" ? "dawn" : id;
 }
+
+const ENEMY_TELEGRAPH: Record<EnemyKind, SfxKey> = {
+  guard: "guardTelegraph",
+  stomper: "stomperTelegraph",
+  lamplighter: "lamplighterTelegraph",
+  sentry: "sentryTelegraph"
+};
+
+const ENEMY_ATTACK: Record<EnemyKind, SfxKey> = {
+  guard: "guardAttack",
+  stomper: "stomperAttack",
+  lamplighter: "lamplighterAttack",
+  sentry: "sentryAttack"
+};
 
 function pickupKey(event: GameEvent, state: GameState): SfxKey {
   for (const pickup of state.pickups) {
@@ -92,6 +102,8 @@ export function createAudio(tuning: Tuning): AudioApi {
   let fileDuckUntil = 0;
   let activeRoom: Room | null = null;
   let dawn = false;
+  const enemyStates = new Map<number, EnemyState>();
+  let trackedRoom: string | null = null;
 
   function applyMusic(): void {
     if (ctx === null || synth === null || pauseDuck === null) return;
@@ -139,7 +151,7 @@ export function createAudio(tuning: Tuning): AudioApi {
     const param = master.gain;
     param.cancelScheduledValues(at);
     param.setValueAtTime(param.value, at);
-    param.linearRampToValueAtTime(muted ? 0 : cfg.master, at + MUTE_RAMP);
+    param.linearRampToValueAtTime(muted ? 0 : cfg.master, at + cfg.muteRampMs / 1000);
   }
 
   function duckForDeath(): void {
@@ -242,11 +254,13 @@ export function createAudio(tuning: Tuning): AudioApi {
     toggleMute,
     setRoom(room: Room): void {
       activeRoom = room;
+      enemyStates.clear();
       selectBed();
     },
     onEvent(event: GameEvent, state: GameState): void {
+      if (event.kind === "start" || event.kind === "respawn") enemyStates.clear();
       if (event.kind === "death") duckForDeath();
-      else if (event.kind === "pause") setPauseDuck(PAUSE_DUCK);
+      else if (event.kind === "pause") setPauseDuck(cfg.pauseDuck);
       else if (event.kind === "resume") setPauseDuck(1);
 
       if (event.kind === "bossTelegraph" && !aggro) {
@@ -276,6 +290,20 @@ export function createAudio(tuning: Tuning): AudioApi {
         dawn = state.progress.bossDefeated;
         selectBed();
       }
+      if (state.roomId !== trackedRoom) {
+        trackedRoom = state.roomId;
+        enemyStates.clear();
+      }
+      for (const enemy of state.enemies) {
+        const previous = enemyStates.get(enemy.id);
+        if (previous === enemy.state) continue;
+        enemyStates.set(enemy.id, enemy.state);
+        if (previous === undefined) continue;
+        if (enemy.state === "telegraph") play(ENEMY_TELEGRAPH[enemy.kind]);
+        else if (enemy.state === "attack" || (enemy.state === "recover" && previous === "telegraph")) {
+          play(ENEMY_ATTACK[enemy.kind]);
+        }
+      }
       if (ctx === null) return;
       const now = ctx.currentTime;
       for (let i = beds.length - 1; i >= 0; i -= 1) {
@@ -286,7 +314,7 @@ export function createAudio(tuning: Tuning): AudioApi {
           beds.splice(i, 1);
           continue;
         }
-        slot.bed.schedule(now + LOOKAHEAD);
+        slot.bed.schedule(now + cfg.lookaheadSec);
       }
       if (fileDuckUntil > 0 && performance.now() >= fileDuckUntil) {
         fileDuckUntil = 0;
