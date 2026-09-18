@@ -1,6 +1,6 @@
-# One More Run: domain glossary
+# Borrowed Dawn: domain glossary
 
-Working title. A fixed-camera 2.5D arena survivor built for the Provide Hackathon, September 2026. This file is the glossary only; decisions live in the wayfinder map and the lifecycle record at `.claude/plans/hackathon-2026-context.md`.
+A side-view 2.5D action game built in a two-day hackathon, September 2026. This file is the glossary only; decisions live in the wayfinder map and the lifecycle record at `.claude/plans/hackathon-2026-context.md`.
 
 ## Terms
 

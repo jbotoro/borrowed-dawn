@@ -1,6 +1,6 @@
-# One More Run
+# Borrowed Dawn
 
-A Hollow Knight-adjacent side-view action game in Three.js, built by directing AI coding agents for the Provide hackathon (2026-09-16 to 2026-09-18). Working title. Vibecoded means directed: agents write the code, the human prompts, playtests, and directs. The first morning's fixed-camera arena survivor was retired and is frozen as `m1-skeleton`.
+A Hollow Knight-adjacent side-view action game in Three.js, built by directing AI coding agents in a two-day hackathon (2026-09-16 to 2026-09-18). Vibecoded means directed: agents write the code, the human prompts, playtests, and directs. The first morning's fixed-camera arena survivor was retired and is frozen as `m1-skeleton`.
 
 ## Read first
 
@@ -19,7 +19,7 @@ three 0.186 with `WebGLRenderer` + `EffectComposer` + `UnrealBloomPass`, TypeScr
 ## Commands
 
 ```
-npm run dev        # http://localhost:5173/one-more-run/
+npm run dev        # http://localhost:5173/borrowed-dawn/
 npm run typecheck
 npm test
 npm run build
@@ -43,7 +43,7 @@ Debug query params: `?autoplay=1&seed=42` (scripted bot plays a run so agents ca
 
 ## Rules of the build
 
-- Look before claiming. Never report a visual or feel change as working without seeing it: with the dev server running, use the Chrome DevTools MCP to `navigate_page` to `http://localhost:5173/one-more-run/?autoplay=1&seed=42`, `take_screenshot`, `list_console_messages`. `press_key` drives input, `evaluate_script` reads state. Add `&screenshot=1` to hide the UI.
+- Look before claiming. Never report a visual or feel change as working without seeing it: with the dev server running, use the Chrome DevTools MCP to `navigate_page` to `http://localhost:5173/borrowed-dawn/?autoplay=1&seed=42`, `take_screenshot`, `list_console_messages`. `press_key` drives input, `evaluate_script` reads state. Add `&screenshot=1` to hide the UI.
 - Playtest before tuning. Numbers change in the configurator during play, then get written back to `src/tuning.ts` defaults.
 - Model routing: design calls on Fable (the main session), implementation on Opus subagents, screenshots and log reading on Haiku, Codex review (`/codex-review`) before each milestone tag.
 - The human owns git and GitHub: commits, pushes, tags, Pages. Agents never run git writes.

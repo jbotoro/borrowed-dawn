@@ -1,7 +1,7 @@
 import GUI from "lil-gui";
 import { tuning } from "../tuning";
 
-const STORAGE_KEY = "one-more-run:tuning";
+const STORAGE_KEY = "borrowed-dawn:tuning";
 
 export function mountConfigurator(): GUI {
   const gui = new GUI({ title: "Tuning" });

@@ -6,3 +6,8 @@ dist-snapshot
 .claude/
 .agents
 CLAUDE.local.md
+
+docs/build-story.md
+docs/transcripts/
+docs/*
+!docs/screens/

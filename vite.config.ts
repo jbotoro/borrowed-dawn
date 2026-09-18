@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 
 const base = process.env.SNAPSHOT_TAG
-  ? `/one-more-run/builds/${process.env.SNAPSHOT_TAG}/`
-  : "/one-more-run/";
+  ? `/borrowed-dawn/builds/${process.env.SNAPSHOT_TAG}/`
+  : "/borrowed-dawn/";
 
 export default defineConfig({
   base,

@@ -145,7 +145,7 @@ declare global {
 window.__omr = { game, tuning, params, rooms };
 window.__omrAudio = audio;
 
-console.log("[one-more-run] boot ok", {
+console.log("[borrowed-dawn] boot ok", {
   seed: params.seed,
   room: game.state.roomId
 });
