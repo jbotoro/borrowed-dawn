@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { tuning } from "../tuning";
 
 export type LookId = "baseline" | "a" | "b" | "c";
 
@@ -557,6 +558,45 @@ function bevelGeometry(w: number, h: number, d: number, bevel: number): THREE.Bu
   return geometry;
 }
 
+function mixHex(from: number, to: number, amount: number): number {
+  const clamped = Math.min(Math.max(amount, 0), 1);
+  scratch.setHex(from).lerp(new THREE.Color(to), clamped);
+  return scratch.getHex();
+}
+
+const FAR_FIELD_C = mixHex(0x0b1019, TINT_RAMP.void, tuning.feel.farFieldDarken);
+
+function luminanceOf(hex: number): number {
+  const r = ((hex >> 16) & 255) / 255;
+  const g = ((hex >> 8) & 255) / 255;
+  const b = (hex & 255) / 255;
+  return r * 0.299 + g * 0.587 + b * 0.114;
+}
+
+export function paleKey(ramp: Ramp, fogColor: number | undefined): number {
+  if (fogColor === undefined) return 0;
+  const floor = luminanceOf(ramp.charcoal);
+  const value = luminanceOf(fogColor);
+  if (value <= floor) return 0;
+  const span = Math.max(luminanceOf(ramp.ash) - floor, 0.0001);
+  return Math.min((value - floor) / span, 1);
+}
+
+export function hallTopColor(ramp: Ramp, amount: number, fogColor?: number): number {
+  const base = mixHex(ramp.void, ramp.charcoal, amount);
+  if (fogColor === undefined) return base;
+  const pale = paleKey(ramp, fogColor);
+  if (pale <= 0) return base;
+  return mixHex(base, fogColor, Math.min(0.3 + 0.5 * pale, 1));
+}
+
+export function hallBaseColor(ramp: Ramp, fogColor?: number): number {
+  if (fogColor === undefined) return ramp.void;
+  const pale = paleKey(ramp, fogColor);
+  if (pale <= 0) return ramp.void;
+  return mixHex(ramp.void, fogColor, Math.min(0.18 + 0.3 * pale, 1));
+}
+
 interface LookSeed {
   id: LookId;
   name: string;
@@ -725,7 +765,7 @@ const seeds: Record<LookId, LookSeed> = {
       architecture: TINT_RAMP.slate,
       rimEdge: TINT_RAMP.porcelain,
       backgroundNear: TINT_RAMP.charcoal,
-      backgroundFar: 0x0b1019,
+      backgroundFar: FAR_FIELD_C,
       actorCoat: TINT_RAMP.slate,
       actorMetal: TINT_RAMP.porcelain,
       actorGlass: TINT_RAMP.amber,

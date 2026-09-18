@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Tuning } from "../tuning";
 import type { Decor, DecorKind, Door, Progress, Rect, Room, Vec2 } from "../game/types";
 import type { LitMaterial, LookProfile } from "./look";
-import { shadeOf } from "./look";
+import { hallBaseColor, hallTopColor, paleKey, shadeOf } from "./look";
 
 export interface RoomMesh {
   group: THREE.Group;
@@ -27,7 +27,15 @@ const FAR_Z = -6;
 const CAP_LIFT = 0.008;
 const CAP_OVERHANG = 0.008;
 const RIM_LIFT = 0.016;
-const WARM_TARGETS: Record<string, boolean> = { belfry: true, cache: true, vault: true };
+const WARM_TARGETS: Record<string, boolean> = {
+  belfry: true,
+  cache: true,
+  vault: true,
+  sunwell: true
+};
+const GLASS_TINT = 0xc8d6e4;
+const HALO_SIZE = 64;
+const KEY_LIFT = 0.55;
 const PLATFORM_KINDS: DecorKind[] = ["stair", "gallery", "beam", "bench", "crate", "wall"];
 
 interface Tagged {
@@ -60,6 +68,15 @@ interface EmberField {
   count: number;
   base: number;
   drawn: number;
+}
+
+interface JarPulse {
+  core: THREE.MeshBasicMaterial;
+  halo: THREE.MeshBasicMaterial;
+  base: THREE.Color;
+  light: THREE.PointLight | null;
+  strength: number;
+  phase: number;
 }
 
 interface DoorGlow {
@@ -104,6 +121,17 @@ interface Veil {
   stoneDark: THREE.Material;
   stoneLit: THREE.Material;
   outline: THREE.Material | null;
+}
+
+function jarProfile(radius: number, height: number): THREE.Vector2[] {
+  const points: THREE.Vector2[] = [];
+  const steps = 12;
+  for (let i = 0; i <= steps; i++) {
+    const v = i / steps;
+    const bulge = Math.sin(Math.PI * (0.14 + v * 0.74));
+    points.push(new THREE.Vector2(radius * (0.5 + 0.5 * bulge), v * height));
+  }
+  return points;
 }
 
 function bellProfile(scale: number, shrink: number): THREE.Vector2[] {
@@ -183,6 +211,35 @@ function shaftFalloff(geometry: THREE.BufferGeometry): void {
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
+function sunFalloff(geometry: THREE.BufferGeometry): void {
+  const position = geometry.getAttribute("position");
+  const colors = new Float32Array(position.count * 3);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const spanX = Math.max(maxX - minX, 0.0001);
+  const spanY = Math.max(maxY - minY, 0.0001);
+  for (let i = 0; i < position.count; i++) {
+    const u = (position.getX(i) - minX) / spanX;
+    const v = (position.getY(i) - minY) / spanY;
+    const across = Math.pow(Math.max(Math.cos((u - 0.5) * Math.PI), 0), 0.5);
+    const w = across * (0.34 + 0.66 * Math.pow(v, 0.8));
+    colors[i * 3] = w;
+    colors[i * 3 + 1] = w;
+    colors[i * 3 + 2] = w;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
 function paintPlane(
   geometry: THREE.BufferGeometry,
   from: THREE.Color,
@@ -212,6 +269,29 @@ function paintPlane(
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
+function paintHall(
+  geometry: THREE.BufferGeometry,
+  centerY: number,
+  floorY: number,
+  height: number,
+  from: THREE.Color,
+  to: THREE.Color
+): void {
+  const position = geometry.getAttribute("position");
+  const colors = new Float32Array(position.count * 3);
+  const span = Math.max(height, 0.0001);
+  const mixed = new THREE.Color();
+  for (let i = 0; i < position.count; i++) {
+    const worldY = position.getY(i) + centerY;
+    const t = Math.min(Math.max((worldY - floorY) / span, 0), 1);
+    mixed.copy(from).lerp(to, Math.pow(t, 1.3));
+    colors[i * 3] = mixed.r;
+    colors[i * 3 + 1] = mixed.g;
+    colors[i * 3 + 2] = mixed.b;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
 export function lampAnchor(room: Room): Vec2 | null {
   const checkpoint = room.checkpoint;
   if (checkpoint === undefined) return null;
@@ -234,26 +314,32 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   const ramp = look.ramp;
   const outlined = look.postfx.outlineArchitecture;
 
-  const wallMat = look.material("backgroundNear");
-  const faceMat = look.material("backgroundNear", { shade: 0.9 });
-  const stoneMat = look.material("architecture");
-  const stoneDarkMat = look.material("architecture", { shade: 0.74 });
-  const stoneLitMat = look.material("architecture", { shade: 1.12 });
+  const wallMat = look.litMaterial("backgroundNear");
+  const faceMat = look.litMaterial("backgroundNear", { shade: 0.9 });
+  const stoneMat = look.litMaterial("architecture");
+  const stoneDarkMat = look.litMaterial("architecture", { shade: 0.74 });
+  const stoneLitMat = look.litMaterial("architecture", { shade: 1.12 });
   const rimMat = look.material("rimEdge", { emissiveIntensity: 0.06 });
-  const ironMat = look.material("chain");
-  const ironDarkMat = look.material("chain", { shade: 0.62 });
-  const midMat = look.material("architecture", { shade: 0.78 });
-  const midDarkMat = look.material("backgroundNear", { shade: 1.25 });
+  const ironMat = look.litMaterial("chain");
+  const ironDarkMat = look.litMaterial("chain", { shade: 0.62 });
+  const midMat = look.litMaterial("architecture", { shade: 0.78 });
+  const midDarkMat = look.litMaterial("backgroundNear", { shade: 1.25 });
   const bellMat = look.material("bossShell", { shade: 1.3, doubleSide: true });
   const bellInnerMat = look.material("backgroundFar", { unlit: true, shade: 0.4, doubleSide: true });
   const voidMat = new THREE.MeshBasicMaterial({ color: ramp.void, fog: false });
   const voidFogMat = new THREE.MeshBasicMaterial({ color: ramp.void });
-  const farMat = new THREE.MeshBasicMaterial({ color: ramp.charcoal, fog: false });
-  const farLitMat = new THREE.MeshBasicMaterial({ color: shadeOf(ramp.charcoal, 1.16), fog: false });
+  const farHex = look.colorOf("backgroundFar");
+  const farMat = new THREE.MeshBasicMaterial({ color: farHex });
+  const farLitMat = new THREE.MeshBasicMaterial({ color: shadeOf(farHex, 1.16) });
+  const sunHex = shadeOf(ramp.amber, 1.4);
   const amberMat = new THREE.MeshBasicMaterial({ color: ramp.amber, fog: false });
   const amberDimMat = new THREE.MeshBasicMaterial({ color: shadeOf(ramp.amber, 0.5), fog: false });
   const gradientMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
-  const backPlaneMat = new THREE.MeshBasicMaterial({ color: ramp.void, fog: false });
+  const backPlaneMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    fog: false
+  });
   const emberMat = new THREE.PointsMaterial({
     color: ramp.amber,
     size: tuning.feel.emberSize,
@@ -287,11 +373,25 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     emberMat
   ];
 
+  const keyLiftTargets: { material: LitMaterial; base: THREE.Color }[] = [
+    wallMat,
+    faceMat,
+    stoneMat,
+    stoneDarkMat,
+    stoneLitMat,
+    ironMat,
+    ironDarkMat,
+    midMat,
+    midDarkMat
+  ].map((material) => ({ material, base: material.color.clone() }));
+  const keyLiftColor = new THREE.Color(ramp.void);
+
   const transientMaterials: THREE.Material[] = [];
   const geometries: THREE.BufferGeometry[] = [];
   const gates: Tagged[] = [];
   const breakables: Tagged[] = [];
   const flames: Flame[] = [];
+  const jars: JarPulse[] = [];
   const sways: SwayEntry[] = [];
   let embers: EmberField | null = null;
   let decorLights = 0;
@@ -307,6 +407,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   let playerX = 0;
   let playerY = 0;
   const dawnColor = new THREE.Color(ramp.amber);
+  let haloMap: THREE.Texture | null = null;
+  let haloTried = false;
   let outlineGeometryCache = new Map<string, THREE.BufferGeometry>();
   let boxGeometryCache = new Map<string, THREE.BufferGeometry>();
 
@@ -318,6 +420,68 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   function transient<T extends THREE.Material>(material: T): T {
     transientMaterials.push(material);
     return material;
+  }
+
+  function haloTexture(): THREE.Texture | null {
+    if (haloTried) return haloMap;
+    haloTried = true;
+    if (typeof document === "undefined") return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = HALO_SIZE;
+    canvas.height = HALO_SIZE;
+    const ctx = canvas.getContext("2d");
+    if (ctx === null) return null;
+    const half = HALO_SIZE * 0.5;
+    const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.16, "rgba(255,255,255,0.58)");
+    grad.addColorStop(0.42, "rgba(255,255,255,0.2)");
+    grad.addColorStop(0.72, "rgba(255,255,255,0.05)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, HALO_SIZE, HALO_SIZE);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    haloMap = texture;
+    return haloMap;
+  }
+
+  function glassMaterial(opacity: number): LitMaterial {
+    const mat = transient(look.litMaterial("rimEdge", { texture: "glass", doubleSide: true }));
+    mat.color.setHex(GLASS_TINT);
+    mat.transparent = true;
+    mat.opacity = Math.min(Math.max(opacity, 0.02), 1);
+    mat.depthWrite = false;
+    mat.needsUpdate = true;
+    return mat;
+  }
+
+  function sheenMaterial(opacity: number): THREE.MeshBasicMaterial {
+    return transient(
+      new THREE.MeshBasicMaterial({
+        color: ramp.porcelain,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false
+      })
+    );
+  }
+
+  function haloMaterial(hex: number): THREE.MeshBasicMaterial {
+    return transient(
+      new THREE.MeshBasicMaterial({
+        color: hex,
+        map: haloTexture(),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false
+      })
+    );
   }
 
   function spillMaterial(hex: number, opacity: number): THREE.MeshBasicMaterial {
@@ -500,14 +664,17 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const rows = Math.floor(rect.h / spacing);
     if (rows < 1) return;
     const random = seededRandom(seed);
-    const front = z + depth * 0.5 + 0.006;
+    const lift = Math.max(feel.wallLift, 0.001);
+    const front = z + depth * 0.5 + lift;
+    const x0 = rect.x + lift;
+    const w = Math.max(rect.w - lift * 2, 0.02);
     for (let i = 1; i <= rows; i++) {
       const y = rect.y + i * spacing;
       if (y > rect.y + rect.h - 0.05) break;
-      addBox(rect.w, 0.032, 0.012, rect.x + rect.w * 0.5, y, front, lineMat, parent);
-      const joints = Math.max(1, Math.floor(rect.w / 1.6));
+      addBox(w, 0.032, 0.012, x0 + w * 0.5, y, front, lineMat, parent);
+      const joints = Math.max(1, Math.floor(w / 1.6));
       for (let j = 0; j < joints; j++) {
-        const jx = rect.x + ((j + 0.25 + random() * 0.5) / joints) * rect.w;
+        const jx = x0 + ((j + 0.25 + random() * 0.5) / joints) * w;
         addBox(0.03, spacing - 0.06, 0.012, jx, y - spacing * 0.5, front, lineMat, parent);
       }
     }
@@ -562,6 +729,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     gates.length = 0;
     breakables.length = 0;
     flames.length = 0;
+    jars.length = 0;
     sways.length = 0;
     embers = null;
     decorLights = 0;
@@ -1113,37 +1281,46 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       if (rectsTouch(opening.rect, rect, 0.2)) veilByOpening.set(opening, veil);
     }
 
-    outlineOverride = hideOutline;
-    addRect(rect, depth, z, face, group, true);
-
     const wall = boundaryUnder(rect, room);
+    const b = room.bounds;
+    const rightWall = wall !== null && wall.x >= b.x + b.w - 0.01;
+    const leftWall = wall !== null && wall.x + wall.w <= b.x + 0.01;
+    const dir = rightWall ? 1 : leftWall ? -1 : 0;
+    const lift = Math.max(feel.wallLift, 0.001);
+    const faceRect: Rect =
+      dir === 0
+        ? rect
+        : {
+            x: dir > 0 ? rect.x - lift * 2 : rect.x,
+            y: rect.y,
+            w: rect.w + lift * 2,
+            h: rect.h
+          };
+
+    outlineOverride = hideOutline;
+    addRect(faceRect, depth, z, face, group, true);
+
     const strip: Rect =
-      wall === null ? rect : { x: wall.x, y: rect.y, w: wall.w, h: rect.h };
+      wall === null ? faceRect : { x: wall.x, y: rect.y, w: wall.w, h: rect.h };
     addCourses(strip, depth, z, group, feel, strip.x + strip.y, lineMat);
 
-    const front = z + depth * 0.5 + 0.007;
+    const front = z + depth * 0.5 + lift * 2;
     const tellY = rect.y + Math.min(Math.max(feel.courseSpacing, 0.3) * 0.5, rect.h * 0.3);
     addBox(strip.w * 0.44, 0.05, 0.014, strip.x + strip.w * 0.24, tellY, front, lineMat, group);
 
-    if (wall !== null) {
-      const b = room.bounds;
-      const rightWall = wall.x >= b.x + b.w - 0.01;
-      const leftWall = wall.x + wall.w <= b.x + 0.01;
-      if (rightWall || leftWall) {
-        const innerX = rightWall ? wall.x : wall.x + wall.w;
-        const dir = rightWall ? 1 : -1;
-        addBox(
-          0.5,
-          rect.h,
-          depth + 0.24,
-          innerX + dir * 0.25,
-          rect.y + rect.h * 0.5,
-          z,
-          pilasterMat,
-          group,
-          true
-        );
-      }
+    if (wall !== null && dir !== 0) {
+      const innerX = dir > 0 ? wall.x : wall.x + wall.w;
+      addBox(
+        0.5,
+        rect.h,
+        depth + 0.24,
+        innerX + dir * (0.25 - lift * 3),
+        rect.y + rect.h * 0.5,
+        z,
+        pilasterMat,
+        group,
+        true
+      );
     }
     outlineOverride = null;
   }
@@ -1431,6 +1608,214 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     flames.push({ material: mouthMat, base: new THREE.Color(ramp.amber), light, lightBase: feel.furnaceLightIntensity * strength, phase: cx * 0.6, amount: feel.furnacePulseAmount, furnace: true });
   }
 
+  function addJar(decor: Decor, feel: Feel): void {
+    const rect = decor.rect;
+    const z = decor.z;
+    const far = z <= FAR_Z;
+    const cx = rect.x + rect.w * 0.5;
+    const radius = Math.max(rect.w, 0.16) * 0.5;
+    const height = Math.max(rect.h, 0.3);
+    const bandH = Math.min(height * 0.13, 0.2);
+    const bodyH = Math.max(height - bandH * 2, 0.1);
+    const baseY = rect.y + bandH;
+    const coreY = baseY + bodyH * 0.44;
+    const hex = decor.color === undefined ? ramp.amber : decor.color;
+    const strength = decor.intensity === undefined ? 1 : decor.intensity;
+    const sides = far ? 8 : 16;
+
+    const body = new THREE.Mesh(
+      track(new THREE.LatheGeometry(jarProfile(radius, bodyH), sides)),
+      far ? farMat : glassMaterial(Math.min(feel.lensOpacity * 1.5, 0.9))
+    );
+    body.position.set(cx, baseY, z);
+    body.renderOrder = 2;
+    group.add(body);
+
+    const capGeo = track(new THREE.CylinderGeometry(radius * 0.84, radius * 0.7, bandH, sides));
+    const cap = new THREE.Mesh(capGeo, far ? farLitMat : rimMat);
+    cap.position.set(cx, rect.y + rect.h - bandH * 0.5, z);
+    group.add(cap);
+
+    const footGeo = track(new THREE.CylinderGeometry(radius * 0.88, radius * 0.98, bandH, sides));
+    const foot = new THREE.Mesh(footGeo, far ? farLitMat : ironMat);
+    foot.position.set(cx, rect.y + bandH * 0.5, z);
+    group.add(foot);
+
+    if (far) return;
+
+    const collar = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(radius * 0.46, radius * 0.46, bandH * 0.62, 10)),
+      ironMat
+    );
+    collar.position.set(cx, rect.y + rect.h - bandH * 1.2, z);
+    group.add(collar);
+
+    const coreMat = transient(new THREE.MeshBasicMaterial({ color: hex, fog: false }));
+    const core = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(radius * 0.4, radius * 0.5, bodyH * 0.58, 12)),
+      coreMat
+    );
+    core.position.set(cx, coreY, z);
+    group.add(core);
+
+    const sheen = sheenMaterial(0.32);
+    addBox(
+      radius * 0.2,
+      bodyH * 0.52,
+      0.02,
+      cx - radius * 0.44,
+      baseY + bodyH * 0.56,
+      z + radius * 0.82,
+      sheen,
+      group
+    );
+
+    const haloSize = Math.max(rect.w, rect.h) * 2.6;
+    const halo = new THREE.Mesh(track(new THREE.PlaneGeometry(haloSize, haloSize)), haloMaterial(hex));
+    halo.position.set(cx, coreY, z + 0.14);
+    halo.layers.set(look.actorLayer);
+    halo.renderOrder = 3;
+    group.add(halo);
+
+    const light = addFlameLight(
+      hex,
+      feel.jarLightIntensity * strength,
+      feel.jarLightDistance,
+      cx,
+      coreY,
+      z + 0.6
+    );
+    jars.push({
+      core: coreMat,
+      halo: halo.material as THREE.MeshBasicMaterial,
+      base: new THREE.Color(hex),
+      light,
+      strength,
+      phase: (Math.abs(cx) * 1.73 + Math.abs(rect.y) * 2.31) % (Math.PI * 2)
+    });
+  }
+
+  function addLens(decor: Decor, feel: Feel): void {
+    const rect = decor.rect;
+    const z = decor.z;
+    const far = z <= FAR_Z;
+    const cx = rect.x + rect.w * 0.5;
+    const radius = Math.max(rect.w, 0.4) * 0.5;
+    const discY = Math.max(rect.y + rect.h - radius, rect.y + radius * 0.6);
+    const standH = Math.max(discY - radius - rect.y, 0);
+    const sides = far ? 14 : 36;
+    const gatherHex = decor.color === undefined ? ramp.amber : decor.color;
+    const gather = (decor.intensity === undefined ? 1 : decor.intensity) * feel.lensOpacity;
+
+    if (standH > 0.18) {
+      const legs = [cx - radius * 0.62, cx + radius * 0.62];
+      for (const lx of legs) {
+        addBox(0.14, standH, 0.24, lx, rect.y + standH * 0.5, z, far ? farMat : ironDarkMat, group, !far);
+      }
+      addBox(radius * 1.7, 0.1, 0.18, cx, rect.y + standH * 0.42, z, far ? farMat : ironMat, group, !far);
+      addBox(radius * 1.5, 0.16, 0.6, cx, rect.y + 0.08, z, far ? farMat : stoneDarkMat, group, !far);
+    }
+
+    if (!far) {
+      addWallGlow(cx, discY, radius * 3.4, radius * 3.4, z - 0.3, ramp.amber, gather * 0.55);
+      addWallGlow(cx, discY, radius * 0.95, radius * 0.95, z - 0.08, gatherHex, gather * 0.5);
+    }
+
+    const disc = new THREE.Mesh(
+      track(new THREE.CircleGeometry(radius * 0.96, sides)),
+      far ? farLitMat : glassMaterial(feel.lensOpacity)
+    );
+    disc.position.set(cx, discY, z);
+    disc.renderOrder = 2;
+    group.add(disc);
+
+    const rim = new THREE.Mesh(
+      track(new THREE.TorusGeometry(radius, Math.max(radius * 0.05, 0.035), 5, sides)),
+      far ? farLitMat : rimMat
+    );
+    rim.position.set(cx, discY, z);
+    group.add(rim);
+    if (far) return;
+
+    const sheen = sheenMaterial(0.4);
+    addBar(
+      cx - radius * 0.58,
+      discY + radius * 0.06,
+      cx - radius * 0.16,
+      discY + radius * 0.64,
+      radius * 0.11,
+      0.03,
+      z + 0.05,
+      sheen,
+      group
+    );
+    addBar(
+      cx - radius * 0.3,
+      discY - radius * 0.34,
+      cx - radius * 0.1,
+      discY - radius * 0.06,
+      radius * 0.07,
+      0.03,
+      z + 0.05,
+      sheen,
+      group
+    );
+
+    const clampY = [discY - radius * 0.86, discY + radius * 0.86];
+    for (const cy of clampY) {
+      addBox(radius * 0.36, 0.12, 0.2, cx, cy, z, ironMat, group, true);
+    }
+    addBox(0.12, radius * 0.4, 0.2, cx - radius * 0.97, discY, z, ironDarkMat, group, true);
+    addBox(0.12, radius * 0.4, 0.2, cx + radius * 0.97, discY, z, ironDarkMat, group, true);
+  }
+
+  function addSunlight(decor: Decor, feel: Feel): void {
+    const rect = decor.rect;
+    const z = decor.z;
+    const cx = rect.x + rect.w * 0.5;
+    const cy = rect.y + rect.h * 0.5;
+    const hex = decor.color === undefined ? sunHex : decor.color;
+    const strength = decor.intensity === undefined ? 1 : decor.intensity;
+
+    const geometry = track(new THREE.PlaneGeometry(rect.w, rect.h, 14, 22));
+    sunFalloff(geometry);
+    const shaft = new THREE.Mesh(geometry, spillMaterial(hex, feel.sunlightOpacity * strength));
+    shaft.position.set(cx, cy, z);
+    group.add(shaft);
+
+    const coreGeo = track(new THREE.PlaneGeometry(rect.w * 0.3, rect.h, 6, 22));
+    sunFalloff(coreGeo);
+    const core = new THREE.Mesh(coreGeo, spillMaterial(hex, feel.sunlightOpacity * strength * 0.7));
+    core.position.set(cx, cy, z + 0.1);
+    group.add(core);
+
+    addBox(
+      rect.w * 0.82,
+      0.14,
+      0.06,
+      cx,
+      rect.y + rect.h - 0.07,
+      z + 0.14,
+      sheenMaterial(Math.min(strength, 1)),
+      group
+    );
+    addPoolSpill(
+      cx,
+      rect.y,
+      Math.max(rect.w, 0.6) * 0.95,
+      hex,
+      Math.min(feel.sunlightOpacity * strength * 1.5, 1)
+    );
+    addFlameLight(
+      hex,
+      feel.sunlightLightIntensity * strength,
+      Math.max(rect.h, rect.w) * 1.6,
+      cx,
+      rect.y + rect.h * 0.84,
+      z + 0.9
+    );
+  }
+
   function addShaft(decor: Decor, feel: Feel): void {
     const hex = decor.color === undefined ? ramp.ash : decor.color;
     const strength = decor.intensity === undefined ? 1 : decor.intensity;
@@ -1693,6 +2078,15 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
         return;
       case "shaft":
         addShaft(decor, feel);
+        return;
+      case "jar":
+        addJar(decor, feel);
+        return;
+      case "lens":
+        addLens(decor, feel);
+        return;
+      case "sunlight":
+        addSunlight(decor, feel);
         return;
       case "boiler":
         addBoiler(decor, feel);
@@ -2051,7 +2445,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       if (b.y + b.h > cursor) spans.push({ x: innerX, y: cursor, w: pilasterW, h: b.y + b.h - cursor });
       for (const span of spans) {
         if (span.h < 0.3) continue;
-        addBox(pilasterW, span.h, depth + 0.24, innerX + dir * pilasterW * 0.5, span.y + span.h * 0.5, 0, stoneDarkMat, group, true);
+        const cx = innerX + dir * (pilasterW * 0.5 - feel.wallLift);
+        addBox(pilasterW, span.h, depth + 0.24, cx, span.y + span.h * 0.5, 0, stoneDarkMat, group, true);
       }
       for (const cut of cuts) {
         if (cut.side !== "left" && cut.side !== "right") continue;
@@ -2143,8 +2538,29 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       const feel = tuning.feel;
       const b = room.bounds;
 
-      const backPlane = new THREE.Mesh(track(new THREE.PlaneGeometry(feel.backPlaneSize, feel.backPlaneSize)), backPlaneMat);
-      backPlane.position.set(b.x + b.w * 0.5, b.y + b.h * 0.5, feel.backPlaneZ);
+      const fogColor = room.ambience === undefined ? undefined : room.ambience.fogColor;
+      const pale = paleKey(ramp, fogColor);
+      keyLiftColor.setHex(fogColor === undefined ? ramp.void : fogColor);
+      for (const entry of keyLiftTargets) {
+        entry.material.color.copy(entry.base).lerp(keyLiftColor, pale * KEY_LIFT);
+        entry.material.emissive.copy(keyLiftColor);
+        entry.material.emissiveIntensity = pale * KEY_LIFT * 0.4;
+      }
+
+      const hallCenterY = b.y + b.h * 0.5;
+      const hallGeometry = track(
+        new THREE.PlaneGeometry(feel.backPlaneSize, feel.backPlaneSize, 1, 48)
+      );
+      paintHall(
+        hallGeometry,
+        hallCenterY,
+        b.y,
+        b.h,
+        new THREE.Color(hallBaseColor(ramp, fogColor)),
+        new THREE.Color(hallTopColor(ramp, feel.farGradientTop, fogColor))
+      );
+      const backPlane = new THREE.Mesh(hallGeometry, backPlaneMat);
+      backPlane.position.set(b.x + b.w * 0.5, hallCenterY, feel.backPlaneZ);
       group.add(backPlane);
 
       const boundary: Rect[] = [];
@@ -2292,6 +2708,20 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
         if (entry.light !== null) entry.light.intensity = entry.lightBase * pulse * flicker;
       }
 
+      if (jars.length > 0) {
+        const glow = Math.max(feel.jarGlow, 0);
+        const speed = feel.jarPulseSpeed;
+        const haloBase = Math.min(glow * 0.42, 1);
+        for (const jar of jars) {
+          const pulse = 1 + Math.sin(t * speed + jar.phase) * 0.22;
+          jar.core.color.copy(jar.base).multiplyScalar(glow * pulse);
+          jar.halo.opacity = Math.min(haloBase * pulse, 1);
+          if (jar.light !== null) {
+            jar.light.intensity = feel.jarLightIntensity * jar.strength * pulse;
+          }
+        }
+      }
+
       const sway = THREE.MathUtils.degToRad(feel.chainSwayDeg);
       for (const entry of sways) {
         entry.pivot.rotation.z = Math.sin(t * feel.chainSwaySpeed + entry.phase) * sway;
@@ -2326,6 +2756,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     dispose(): void {
       clear();
       for (const mat of baseMaterials) mat.dispose();
+      if (haloMap !== null) {
+        haloMap.dispose();
+        haloMap = null;
+      }
+      haloTried = false;
     }
   };
 }

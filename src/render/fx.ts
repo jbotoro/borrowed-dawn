@@ -27,6 +27,12 @@ const PUFF_SLOTS = 14;
 const LIFT_SLOTS = 12;
 const PICKUP_SLOTS = 4;
 const EMBER_TAIL = 3;
+const TONGUE_COUNT = 4;
+const TONGUE_X = [-0.32, -0.12, 0.11, 0.34];
+const TONGUE_BASE_Y = [0.4, 0.74, 0.7, 0.36];
+const TONGUE_HEIGHT = [0.46, 0.72, 0.64, 0.42];
+const SPARK_WAVES = 8;
+const SPARK_LIFE = 0.55;
 const MARK_THICKNESS = 0.055;
 const FX_Z = 0.35;
 const BEHIND_Z = -0.25;
@@ -59,6 +65,8 @@ interface Ridge {
   group: THREE.Group;
   crest: THREE.Mesh;
   core: THREE.Mesh;
+  underglow: THREE.Mesh;
+  tongues: THREE.Mesh[];
 }
 
 interface EmberView {
@@ -124,6 +132,38 @@ function ridgeGeometry(): THREE.BufferGeometry {
   return new THREE.ShapeGeometry(shape);
 }
 
+function glowTexture(): THREE.Texture | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return null;
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.3, "rgba(255,255,255,0.5)");
+  grad.addColorStop(0.68, "rgba(255,255,255,0.12)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function tongueGeometry(): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.5, 0);
+  shape.lineTo(-0.3, 0.34);
+  shape.lineTo(-0.12, 0.62);
+  shape.lineTo(0.02, 1);
+  shape.lineTo(0.16, 0.7);
+  shape.lineTo(0.36, 0.42);
+  shape.lineTo(0.5, 0);
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
+}
+
 function diamondGeometry(): THREE.BufferGeometry {
   const shape = new THREE.Shape();
   shape.moveTo(0, 0.5);
@@ -144,6 +184,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
   const chevron = chevronGeometry();
   const puff = puffGeometry();
   const ridge = ridgeGeometry();
+  const tongue = tongueGeometry();
   const diamond = diamondGeometry();
 
   function flatMaterial(
@@ -346,29 +387,54 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
   const sweepMark = createMark("danger", 0.2);
   const stompMark = createMark("danger", 0.12);
 
-  const ridgeCrestMaterial = look.material("actorMetal", { unlit: true, fog: false }) as
+  const ridgeCoreMaterial = look.material("danger", { unlit: true, fog: false, shade: 0.66 }) as
     THREE.MeshBasicMaterial;
-  const ridgeCoreMaterial = look.material("danger", { unlit: true, fog: false }) as
+  const ridgeHeartMaterial = look.material("danger", { unlit: true, fog: false, shade: 1.5 }) as
     THREE.MeshBasicMaterial;
-  ridgeCrestMaterial.side = THREE.DoubleSide;
+  const ridgeTongueMaterial = look.material("danger", { unlit: true, fog: false, shade: 1.18 }) as
+    THREE.MeshBasicMaterial;
   ridgeCoreMaterial.side = THREE.DoubleSide;
+  ridgeHeartMaterial.side = THREE.DoubleSide;
+  ridgeTongueMaterial.side = THREE.DoubleSide;
+  const ridgeUnderglowMaterial = flatMaterial("reward", 0.5);
+  ridgeUnderglowMaterial.blending = THREE.AdditiveBlending;
+  ridgeUnderglowMaterial.map = glowTexture();
 
   const ridges: Ridge[] = [];
   const hazardSlots = Math.max(1, Math.round(tuning.world.hazardCapacity));
   for (let i = 0; i < hazardSlots; i++) {
     const holder = new THREE.Group();
     holder.visible = false;
-    const crest = new THREE.Mesh(ridge, ridgeCrestMaterial);
-    crest.position.z = 0;
-    crest.layers.set(ACTOR_LAYER);
-    holder.add(crest);
+    const underglow = new THREE.Mesh(plane, ridgeUnderglowMaterial);
+    underglow.position.z = -0.02;
+    underglow.layers.set(ACTOR_LAYER);
+    holder.add(underglow);
+    const tongues: THREE.Mesh[] = [];
+    for (let k = 0; k < TONGUE_COUNT; k++) {
+      const flame = new THREE.Mesh(tongue, ridgeTongueMaterial);
+      flame.position.z = 0.01;
+      flame.layers.set(ACTOR_LAYER);
+      holder.add(flame);
+      tongues.push(flame);
+    }
     const core = new THREE.Mesh(ridge, ridgeCoreMaterial);
-    core.position.z = 0.02;
+    core.position.z = 0;
     core.layers.set(ACTOR_LAYER);
     holder.add(core);
+    const crest = new THREE.Mesh(ridge, ridgeHeartMaterial);
+    crest.position.z = 0.02;
+    crest.layers.set(ACTOR_LAYER);
+    holder.add(crest);
     group.add(holder);
-    ridges.push({ group: holder, crest, core });
+    ridges.push({ group: holder, crest, core, underglow, tongues });
   }
+
+  const sparkSlots =
+    Math.min(hazardSlots, SPARK_WAVES) * Math.max(2, Math.round(tuning.feel.fireWaveSparks));
+  const sparks = createSprites(sparkSlots, diamond, "reward", 1, FX_Z + 0.08);
+  let sparkCursor = 0;
+  const sparkDue: number[] = [];
+  for (let i = 0; i < 64; i++) sparkDue.push(0);
 
   const emberHeadMaterial = flatMaterial("reward", 1);
   const emberTailMaterials: THREE.MeshBasicMaterial[] = [];
@@ -577,12 +643,13 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       roomCheckpoint = room.checkpoint === undefined
         ? null
         : { x: room.checkpoint.x, y: room.checkpoint.y };
-      for (const pool of [bursts, chevrons, puffs, lifts]) {
+      for (const pool of [bursts, chevrons, puffs, lifts, sparks]) {
         for (const slot of pool) {
           slot.active = false;
           slot.mesh.visible = false;
         }
       }
+      for (let i = 0; i < sparkDue.length; i++) sparkDue[i] = 0;
     },
 
     onEvent(event: GameEvent, state: GameState, live: Tuning): void {
@@ -759,9 +826,51 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
         ridgeIndex++;
         slot.group.visible = true;
         slot.group.position.set(hx, hy, FX_Z);
-        slot.crest.scale.set(hazard.w, hazard.h, 1);
-        slot.core.scale.set(hazard.w * (1 - feel.fxRidgeCrest), hazard.h * (1 - feel.fxRidgeCrest * 1.6), 1);
-        slot.core.position.set(0, hazard.h * feel.fxRidgeCrest * 0.2, 0.02);
+        slot.core.scale.set(hazard.w, hazard.h, 1);
+        slot.core.position.set(0, 0, 0);
+        slot.crest.scale.set(
+          hazard.w * (1 - feel.fxRidgeCrest * 2.4),
+          hazard.h * (1 - feel.fxRidgeCrest * 3),
+          1
+        );
+        slot.crest.position.set(0, hazard.h * feel.fxRidgeCrest * 0.4, 0.02);
+        slot.underglow.scale.set(hazard.w * 3.4, hazard.h * 1.5, 1);
+        slot.underglow.position.set(0, hazard.h * 0.1, -0.02);
+
+        const phase = i * 1.37;
+        for (let k = 0; k < TONGUE_COUNT; k++) {
+          const flame = slot.tongues[k];
+          if (flame === undefined) continue;
+          const wobble = 0.5 + 0.5 * Math.sin(rt * feel.fireWaveFlicker + phase + k * 1.9);
+          const tall =
+            hazard.h * feel.fireWaveHeightScale * (TONGUE_HEIGHT[k] ?? 0.4) * (0.4 + 0.6 * wobble);
+          flame.scale.set(hazard.w * 0.24, tall, 1);
+          flame.position.set(
+            hazard.w * (TONGUE_X[k] ?? 0),
+            hazard.h * (TONGUE_BASE_Y[k] ?? 0.6),
+            0.01
+          );
+        }
+
+        const due = sparkDue[i];
+        if (due === undefined || t >= due) {
+          const rate = Math.max(feel.fireWaveSparks, 1);
+          sparkDue[i] = t + SPARK_LIFE / rate;
+          const trail = hazard.vel.x >= 0 ? -1 : 1;
+          const jitter = ((Math.imul(sparkCursor + 1, 2654435761) >>> 0) % 1000) / 1000;
+          sparkCursor = spawnSprite(
+            sparks,
+            sparkCursor,
+            hx + trail * hazard.w * (0.44 + jitter * 0.72),
+            hy + hazard.h * (0.12 + jitter * 0.4),
+            trail * (0.3 + jitter * 0.6),
+            1.2 + jitter * 1.1,
+            feel.fxLiftSize * (0.42 + jitter * 0.3),
+            0,
+            t,
+            SPARK_LIFE
+          );
+        }
       }
       for (let i = ridgeIndex; i < ridges.length; i++) {
         const slot = ridges[i];
@@ -817,6 +926,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       stepSprites(chevrons, step, t, 3.2, 0);
       stepSprites(puffs, step, t, 2.4, -0.4);
       stepSprites(lifts, step, t, 1.1, -0.2);
+      stepSprites(sparks, step, t, 1.5, 1.4);
 
       for (const slot of bursts) {
         if (!slot.active) continue;
@@ -828,6 +938,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       syncSprites(chevrons);
       syncSprites(puffs);
       syncSprites(lifts);
+      syncSprites(sparks);
     }
   };
 }

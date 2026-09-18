@@ -16,7 +16,7 @@ import { createEnemyMeshes } from "./enemyMesh";
 import { createBossMesh } from "./bossMesh";
 import { createFx } from "./fx";
 import { createSideCamera } from "./camera";
-import { desaturateHex, mountLookBar, resolveLook } from "./look";
+import { desaturateHex, mountLookBar, paleKey, resolveLook } from "./look";
 
 export interface RenderWorld {
   setRoom(room: Room, progress: Progress): void;
@@ -227,11 +227,12 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
       if (victory) applyVictoryTargets(live);
       return;
     }
+    const pale = paleKey(look.ramp, amb.fogColor);
     const fogHex =
-      look.fog.colorOverride === null
+      look.fog.colorOverride === null || pale > 0
         ? desaturateHex(amb.fogColor, look.fog.saturation)
         : look.fog.colorOverride;
-    const mix = look.rigMix;
+    const mix = pale > 0 ? look.rigMix * (1 - pale) : look.rigMix;
     targetFog.setHex(fogHex);
     targetSky.setHex(desaturateHex(amb.hemiSky, sat)).lerp(rigSky, mix);
     targetGround.setHex(desaturateHex(amb.hemiGround, sat)).lerp(rigGround, mix);
@@ -315,7 +316,7 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
       const shown = posedForTitle(state, currentRoom);
       player.sync(shown, alpha, simTime, renderTime, live);
       enemies.sync(state.enemies, alpha, simTime, live);
-      boss.sync(state.boss, alpha, simTime, renderTime, live);
+      boss.sync(state.boss, alpha, simTime, renderTime, live, shown.pos.x, shown.pos.y);
       fx.sync(state, shown, alpha, dt, simTime, renderTime, live);
       camera.sync(shown, currentRoom, alpha, dt, live);
       if (spot !== null && spotSpec !== null) {

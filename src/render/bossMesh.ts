@@ -11,7 +11,9 @@ export interface BossMesh {
     alpha: number,
     t: number,
     rt: number,
-    tuning: Tuning
+    tuning: Tuning,
+    targetX?: number,
+    targetY?: number
   ): void;
 }
 
@@ -22,6 +24,32 @@ const WHITE = new THREE.Color(0xffffff);
 const LINK_SPACING_REST = 0.075;
 const LINK_SPACING_FULL = 0.138;
 const LINKS_PER_SEGMENT = 4;
+const GLOW_SIZE = 64;
+const ARM_LAG = 0.55;
+const SWAY_FOLLOW = 0.09;
+const HEAD_FOLLOW = 0.07;
+const HEAD_TRACK_LIMIT = 0.14;
+
+function glowTexture(): THREE.Texture | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = GLOW_SIZE;
+  canvas.height = GLOW_SIZE;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return null;
+  const half = GLOW_SIZE * 0.5;
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.16, "rgba(255,255,255,0.7)");
+  grad.addColorStop(0.42, "rgba(255,255,255,0.26)");
+  grad.addColorStop(0.72, "rgba(255,255,255,0.06)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, GLOW_SIZE, GLOW_SIZE);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
 
 const BELL: Point[] = [
   [-0.5, 0.0],
@@ -118,6 +146,15 @@ const MOUTH: Point[] = [
   [0.142, 0.13],
   [0.15, 0.035]
 ];
+
+const MOUTH_BAR: Point[] = [
+  [-0.011, 0.042],
+  [0.011, 0.042],
+  [0.011, 0.186],
+  [-0.011, 0.186]
+];
+
+const MOUTH_BAR_X = [-0.084, 0.0, 0.084];
 
 const YOKE: Point[] = [
   [-0.55, 0.96],
@@ -304,9 +341,21 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
   torso.position.z = zBody;
   shellScale.add(torso);
 
-  const mouth = plate(MOUTH, mouthMat, depth * 0.8);
-  mouth.position.z = zNear + depth;
-  shellScale.add(mouth);
+  const mouthVoid = plate(MOUTH, voidMat, depth * 0.8);
+  mouthVoid.position.z = zNear + depth * 0.5;
+  shellScale.add(mouthVoid);
+
+  const mouthHeat = plate(MOUTH, mouthMat, depth * 0.7);
+  mouthHeat.position.z = zNear + depth * 1.05;
+  mouthHeat.scale.set(0.86, 0.8, 1);
+  shellScale.add(mouthHeat);
+
+  for (const bx of MOUTH_BAR_X) {
+    const bar = plate(MOUTH_BAR, porcelainMat, depth * 0.6);
+    bar.position.x += bx;
+    bar.position.z = zNear + depth * 1.6;
+    shellScale.add(bar);
+  }
 
   const headPivot = new THREE.Object3D();
   headPivot.position.set(0.0, 0.89, 0);
@@ -393,6 +442,21 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
   const furnaceLight = new THREE.PointLight(look.colorOf("bossFurnace"), 0, 1, 2);
   group.add(furnaceLight);
 
+  const furnaceGlowMat = new THREE.MeshBasicMaterial({
+    color: look.colorOf("bossFurnace"),
+    map: glowTexture(),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false
+  });
+  const furnaceGlow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), furnaceGlowMat);
+  furnaceGlow.frustumCulled = false;
+  furnaceGlow.layers.set(look.actorLayer);
+  furnaceGlow.visible = false;
+  group.add(furnaceGlow);
+
   rig.traverse((node) => {
     const mesh = node as THREE.Mesh;
     if (mesh.isMesh === true) mesh.layers.set(look.actorLayer);
@@ -403,25 +467,50 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
     return clamp01((t - boss.stateStart) / (boss.stateUntil - boss.stateStart));
   }
 
-  function layoutArm(arm: Arm, angle: number, extend: number): void {
+  function layoutArm(
+    arm: Arm,
+    angle: number,
+    extend: number,
+    amp: number,
+    phase: number
+  ): void {
     const spacing = LINK_SPACING_REST + (LINK_SPACING_FULL - LINK_SPACING_REST) * clamp01(extend);
-    arm.pivot.rotation.z = angle;
+    const s0 = Math.sin(phase);
+    const s1 = Math.sin(phase - ARM_LAG);
+    const s2 = Math.sin(phase - ARM_LAG * 2);
+    arm.pivot.rotation.z = angle + amp * s0;
+    arm.elbow.rotation.z = amp * 0.85 * (s1 - s0);
     let index = 0;
     for (const link of arm.links) {
       const inSegment = index % LINKS_PER_SEGMENT;
       link.position.x = (inSegment + 0.5) * spacing;
+      link.rotation.z = Math.PI * 0.5 + amp * 0.55 * Math.sin(phase - 0.2 * (index + 1));
       index++;
     }
     arm.elbow.position.x = LINKS_PER_SEGMENT * spacing;
-    arm.clapper.position.x = LINKS_PER_SEGMENT * spacing + 0.11;
+    const tipReach = LINKS_PER_SEGMENT * spacing + 0.11;
+    const tipAngle = amp * 0.75 * (s2 - s1);
+    arm.clapper.position.set(Math.cos(tipAngle) * tipReach, Math.sin(tipAngle) * tipReach, 0);
   }
+
+  let swayLevel = 1;
+  let headTrack = 0;
 
   return {
     group,
 
-    sync(boss: Boss | null, alpha: number, t: number, rt: number, live: Tuning): void {
+    sync(
+      boss: Boss | null,
+      alpha: number,
+      t: number,
+      rt: number,
+      live: Tuning,
+      targetX?: number,
+      targetY?: number
+    ): void {
       if (boss === null) {
         group.visible = false;
+        furnaceGlow.visible = false;
         return;
       }
       group.visible = true;
@@ -444,18 +533,28 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
       let farExtend = 0;
       let headSag = 0.14;
       let visorHot = 0;
+      let visorEmber = 0;
       let mouthHeat = 0;
+      let swayTarget = 0;
+      let armSlack = 0;
       let mouthGlow = feel.bossFurnaceEmissive * (boss.phase === 2 ? 0.9 : 0.6);
       const breath =
         1 +
         Math.sin(rt * feel.bellBreathSpeed) * feel.bellBreathAmount * (boss.phase === 2 ? 1.4 : 1);
+      const toll = Math.sin(rt * feel.bellBreathSpeed * 0.72);
 
       if (boss.state === "dormant") {
         headSag = 0.34;
         mouthGlow *= 0.7;
+        visorEmber = 0.2;
+        swayTarget = 1;
+        shellTilt = THREE.MathUtils.degToRad(feel.bellRockDeg) * 0.12 * toll;
       } else if (boss.state === "idle") {
         headSag = 0.14 - Math.sin(rt * feel.bellBreathSpeed) * 0.018;
         mouthGlow *= breath;
+        visorEmber = 0.34 + 0.12 * toll;
+        swayTarget = 1;
+        shellTilt = THREE.MathUtils.degToRad(feel.bellRockDeg) * 0.18 * toll;
       } else if (boss.state === "sweepTelegraph") {
         const p = progress(boss, t);
         shellTilt = tilt * p;
@@ -543,11 +642,15 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
         mouthHeat = p * 0.6;
         mouthGlow = feel.bossFurnaceEmissive * (0.8 + 1.1 * p);
       } else if (boss.state === "dead") {
+        const age = Math.max(t - boss.stateStart, 0);
+        const decay = Math.exp(-age * 1.05);
+        armSlack =
+          THREE.MathUtils.degToRad(feel.bellArmSwayDeg) * 2.6 * decay * Math.sin(age * 5.4);
         shellLift = 0;
         shellTilt = tilt * 0.4;
         compress = 0.94;
-        leadAngle = armRest - 0.25;
-        farAngle = armRest - 0.18;
+        leadAngle = armRest - 0.25 + armSlack;
+        farAngle = armRest - 0.18 + armSlack * 0.78;
         headSag = 0.44;
         visorHot = 0;
         mouthHeat = 0;
@@ -566,10 +669,25 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
       const reachUnits = cfg.sweepReach / Math.max(cfg.width, 0.1);
       const fullSpan = LINKS_PER_SEGMENT * 2 * LINK_SPACING_FULL + 0.11;
       const extendScale = clamp01(reachUnits / Math.max(fullSpan, 0.01));
-      layoutArm(armLead, leadAngle, leadExtend * extendScale);
-      layoutArm(armFar, farAngle, farExtend * extendScale);
+      swayLevel += (swayTarget - swayLevel) * SWAY_FOLLOW;
+      const swayAmp = THREE.MathUtils.degToRad(feel.bellArmSwayDeg) * swayLevel;
+      const swayPhase = rt * feel.bellArmSwaySpeed;
+      layoutArm(armLead, leadAngle, leadExtend * extendScale, swayAmp, swayPhase);
+      layoutArm(armFar, farAngle, farExtend * extendScale, swayAmp * 0.85, swayPhase + 0.9);
 
-      headPivot.rotation.z = -headSag;
+      let trackTarget = 0;
+      if (
+        targetX !== undefined &&
+        targetY !== undefined &&
+        (boss.state === "idle" || boss.state === "dormant")
+      ) {
+        const headY = y + cfg.height * 0.78;
+        const dx = Math.abs(targetX - x) + 0.6;
+        const raw = Math.atan2(targetY + 0.6 - headY, dx);
+        trackTarget = raw < -HEAD_TRACK_LIMIT ? -HEAD_TRACK_LIMIT : raw > HEAD_TRACK_LIMIT ? HEAD_TRACK_LIMIT : raw;
+      }
+      headTrack += (trackTarget - headTrack) * HEAD_FOLLOW;
+      headPivot.rotation.z = -headSag + headTrack;
 
       const cracked = boss.phase === 2 || boss.state === "crack" || boss.state === "dead";
       crackGlow.visible = cracked;
@@ -586,10 +704,28 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
       const flashStep = flash > 0.62 ? 1 : flash > 0.26 ? 0.5 : 0;
       const whiten = Math.min(1, flashStep * feel.telegraphEmissive);
 
-      scratch.copy(amber).lerp(danger, mouthHeat).lerp(WHITE, whiten);
+      const hot =
+        boss.phase === 2 ||
+        boss.state === "sweepTelegraph" ||
+        boss.state === "sweepActive" ||
+        boss.state === "stompTelegraph" ||
+        boss.state === "stompRise" ||
+        boss.state === "stompSlam" ||
+        boss.state === "crack";
+      const shimmerSpeed = feel.bellBreathSpeed * (hot ? 5.2 : 2.4);
+      const shimmer =
+        (Math.sin(rt * shimmerSpeed) * 0.62 + Math.sin(rt * shimmerSpeed * 1.87 + 1.1) * 0.38) *
+        feel.bossFurnaceShimmer *
+        (hot ? 1.5 : 1);
+
+      scratch
+        .copy(amber)
+        .lerp(danger, mouthHeat)
+        .multiplyScalar(1 + shimmer * 0.3)
+        .lerp(WHITE, whiten);
       mouthMat.color.copy(scratch);
 
-      scratch.copy(voidColor).lerp(danger, visorHot);
+      scratch.copy(voidColor).lerp(amber, visorEmber).lerp(danger, visorHot);
       visorMat.color.copy(scratch);
 
       scratch.copy(charcoalBase).lerp(WHITE, whiten);
@@ -608,10 +744,21 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
       scratch.setHex(look.heat(crackHeat));
       crackMat.color.copy(scratch).lerp(WHITE, Math.min(1, feel.bellHeatEmissive * 0.3));
 
+      const pulse = 1 + shimmer * 0.28;
       furnaceLight.color.copy(amber).lerp(danger, mouthHeat);
-      furnaceLight.intensity = mouthGlow * feel.bossFurnaceLightScale;
+      furnaceLight.intensity = Math.max(mouthGlow * pulse, 0) * feel.bossFurnaceLightScale;
       furnaceLight.distance = cfg.width * feel.bossFurnaceLightRange;
       furnaceLight.position.set(0, cfg.height * 0.1, cfg.width * 0.2);
+
+      const glowBoost = boss.phase === 2 ? 1.35 : 1;
+      const glowSize =
+        Math.max(feel.bossFurnaceGlowRadius, 0) * 2 * (1 + shimmer * 0.16) * glowBoost;
+      const glowOpacity = Math.min(clamp01(mouthGlow * 1.05 * pulse * glowBoost), 0.42);
+      furnaceGlowMat.color.copy(amber).lerp(danger, mouthHeat);
+      furnaceGlowMat.opacity = glowOpacity;
+      furnaceGlow.scale.set(glowSize, glowSize, 1);
+      furnaceGlow.position.set(0, cfg.height * (shellLift + 0.115), cfg.width * 0.08);
+      furnaceGlow.visible = glowOpacity > 0.004 && glowSize > 0.01;
 
       const sway = THREE.MathUtils.degToRad(feel.chainSwayDeg) * 0.25;
       const swayAngle = Math.sin(rt * feel.chainSwaySpeed) * sway + shellTilt * 0.3;
