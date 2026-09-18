@@ -42,7 +42,9 @@ export const roomNames = {
   gallery: "Chain Gallery",
   cache: "Wick Cache",
   belfry: "Belfry",
-  vault: "Ember Vault"
+  vault: "Ember Vault",
+  reserve: "The Reserve",
+  sunwell: "The Sunwell"
 };
 
 export type RoomId = keyof typeof roomNames;
