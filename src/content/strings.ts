@@ -44,6 +44,7 @@ export const roomNames = {
   belfry: "Belfry",
   vault: "Ember Vault",
   reserve: "The Reserve",
+  lenshall: "The Lens Hall",
   sunwell: "The Sunwell"
 };
 

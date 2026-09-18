@@ -64,6 +64,9 @@ export function createBanners(root: HTMLElement): Banners {
   function resetRun(): void {
     bossIntroShown = false;
     lockUntil = -1000;
+    text = "";
+    shownAt = -1000;
+    holdSeconds = 0;
     announced.clear();
   }
 

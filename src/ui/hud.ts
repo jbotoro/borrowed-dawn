@@ -6,8 +6,6 @@ export interface Hud {
   sync(state: GameState, tuning: Tuning): void;
 }
 
-const ROOM_LABEL_MS = 3200;
-
 function setText(el: HTMLElement, value: string): void {
   if (el.textContent !== value) el.textContent = value;
 }
@@ -129,7 +127,7 @@ export function createHud(root: HTMLElement): Hud {
       const showRoom =
         state.phase !== "title" &&
         state.phase !== "paused" &&
-        state.time - roomShownAt < ROOM_LABEL_MS / 1000;
+        state.time - roomShownAt < tuning.feel.roomLabelMs / 1000;
       if (showRoom !== roomVisible) {
         roomVisible = showRoom;
         roomLabel.classList.toggle("show", showRoom);

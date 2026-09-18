@@ -6,9 +6,8 @@ const CHARCOAL = 0x151b24;
 const ASH = 0x7c8794;
 const PORCELAIN = 0xe8e2d5;
 const EMBER = 0xffb648;
-const PALE_HAZE = 0x8fa3b6;
+const DIM_HAZE = 0x5a6878;
 const COOL_KEY = 0xdfe9f2;
-const DAWN_HAZE = 0x7d7360;
 const DAWN_KEY = 0xfff2dc;
 
 const landingAmbience: RoomAmbience = {
@@ -64,35 +63,51 @@ const vaultAmbience: RoomAmbience = {
   keyIntensity: 0.66,
   fillColor: EMBER,
   fillIntensity: 0.26,
-  emberDensity: 0.55
+  emberDensity: 0.55,
+  shaftDirX: -0.22
 };
 
 const reserveAmbience: RoomAmbience = {
-  fogColor: PALE_HAZE,
+  fogColor: DIM_HAZE,
   fogNear: 8,
   fogFar: 22,
-  hemiSky: PORCELAIN,
-  hemiGround: ASH,
-  hemiIntensity: 1.0,
+  hemiSky: ASH,
+  hemiGround: CHARCOAL,
+  hemiIntensity: 0.6,
   keyColor: COOL_KEY,
-  keyIntensity: 0.9,
+  keyIntensity: 0.55,
   fillColor: EMBER,
-  fillIntensity: 0.1,
+  fillIntensity: 0.16,
   emberDensity: 0.12
 };
 
+const lensHallAmbience: RoomAmbience = {
+  fogColor: DIM_HAZE,
+  fogNear: 9,
+  fogFar: 26,
+  hemiSky: ASH,
+  hemiGround: CHARCOAL,
+  hemiIntensity: 0.64,
+  keyColor: COOL_KEY,
+  keyIntensity: 0.6,
+  fillColor: COOL_KEY,
+  fillIntensity: 0.16,
+  emberDensity: 0.1
+};
+
 const sunwellAmbience: RoomAmbience = {
-  fogColor: DAWN_HAZE,
+  fogColor: VOID,
   fogNear: 6,
   fogFar: 17,
-  hemiSky: PORCELAIN,
-  hemiGround: ASH,
-  hemiIntensity: 1.3,
-  keyColor: DAWN_KEY,
-  keyIntensity: 1.15,
+  hemiSky: ASH,
+  hemiGround: VOID,
+  hemiIntensity: 0.28,
+  keyColor: COOL_KEY,
+  keyIntensity: 0.42,
   fillColor: EMBER,
-  fillIntensity: 0.5,
-  emberDensity: 0.2
+  fillIntensity: 0.04,
+  emberDensity: 0.3,
+  shaftDirX: 0.26
 };
 
 const belfryAmbience: RoomAmbience = {
@@ -145,8 +160,8 @@ const landing: Room = {
     {
       rect: { x: -0.6, y: 0, w: 1.2, h: 2.8 },
       to: "sunwell",
-      entry: { x: 2.8, y: 0 },
-      entryFacing: 1
+      entry: { x: 9.6, y: 0 },
+      entryFacing: -1
     }
   ],
   enemies: [],
@@ -179,6 +194,7 @@ const landing: Room = {
     { kind: "arch", rect: { x: 15.4, y: 3.1, w: 5.4, h: 5.4 }, z: -3.6 },
     { kind: "pillar", rect: { x: 21.2, y: 0, w: 1.0, h: 9 }, z: -3.4 },
     { kind: "boiler", rect: { x: 7.6, y: 0, w: 2.4, h: 1.5 }, z: -2.2 },
+    { kind: "shutter", rect: { x: 0.6, y: 0, w: 1.0, h: 2.8 }, z: -1.2, color: EMBER, intensity: 0.6 },
     { kind: "lamp", rect: { x: 0, y: 0, w: 3.1, h: 3.7 }, z: -0.9 },
     { kind: "bench", rect: { x: 5.2, y: 0, w: 2.4, h: 0.55 }, z: 0 },
     { kind: "crate", rect: { x: 11.2, y: 0, w: 2.0, h: 2.25 }, z: 0 },
@@ -551,8 +567,7 @@ const reserve: Room = {
     { x: 23.7, y: 3.9, w: 0.9, h: 0.28 },
     { x: 24.6, y: 3.1, w: 0.9, h: 0.28 },
     { x: 25.5, y: 2.3, w: 0.9, h: 0.28 },
-    { x: 26.4, y: 1.5, w: 0.9, h: 0.28 },
-    { x: 27.6, y: 0, w: 2.0, h: 1.0 }
+    { x: 26.4, y: 1.5, w: 0.9, h: 0.28 }
   ],
   doors: [
     {
@@ -560,10 +575,16 @@ const reserve: Room = {
       to: "belfry",
       entry: { x: 33.4, y: 0 },
       entryFacing: -1
+    },
+    {
+      rect: { x: 29.4, y: 0, w: 1.2, h: 3.0 },
+      to: "lenshall",
+      entry: { x: 2.0, y: 0 },
+      entryFacing: 1
     }
   ],
   enemies: [],
-  pickups: [{ id: "dawn-core", kind: "dawnCore", x: 28.6, y: 1.4 }],
+  pickups: [],
   gates: [],
   breakables: [],
   ambience: reserveAmbience,
@@ -572,7 +593,7 @@ const reserve: Room = {
     { kind: "block", rect: { x: -3, y: 0, w: 36, h: 3.2 }, z: -13 },
     { kind: "block", rect: { x: -3, y: 0, w: 4, h: 16 }, z: -13 },
     { kind: "block", rect: { x: 28.4, y: 0, w: 6, h: 16 }, z: -13 },
-    { kind: "glow", rect: { x: 26.4, y: 0.4, w: 5.2, h: 5.2 }, z: -12, color: EMBER, intensity: 0.35 },
+    { kind: "glow", rect: { x: 26.4, y: 0.4, w: 5.2, h: 5.2 }, z: -12, color: COOL_KEY, intensity: 0.3 },
     { kind: "wall", rect: { x: 0, y: 0, w: 30, h: 14 }, z: -4.2, intensity: 1 },
     { kind: "pillar", rect: { x: 4.0, y: 0, w: 1.0, h: 14 }, z: -3.4 },
     { kind: "pillar", rect: { x: 13.4, y: 0, w: 1.0, h: 14 }, z: -3.4 },
@@ -592,6 +613,9 @@ const reserve: Room = {
     { kind: "jar", rect: { x: 2.5, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.7 },
     { kind: "jar", rect: { x: 6.1, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.7 },
     { kind: "lens", rect: { x: 8.0, y: 0, w: 2.2, h: 3.0 }, z: -1.5, color: COOL_KEY, intensity: 0.8 },
+    { kind: "conduit", rect: { x: 2.4, y: 2.9, w: 5.9, h: 0.22 }, z: -1.45, color: EMBER, intensity: 0.75 },
+    { kind: "conduit", rect: { x: 2.6, y: 1.05, w: 0.2, h: 1.85 }, z: -1.45, color: EMBER, intensity: 0.65 },
+    { kind: "conduit", rect: { x: 6.2, y: 1.05, w: 0.2, h: 1.85 }, z: -1.45, color: EMBER, intensity: 0.65 },
     { kind: "gallery", rect: { x: 15.8, y: 0, w: 7.8, h: 4.7 }, z: 0 },
     { kind: "stair", rect: { x: 10.4, y: 0, w: 5.4, h: 4.7 }, z: 0 },
     { kind: "stair", rect: { x: 23.6, y: 0, w: 3.7, h: 4.7 }, z: 0 },
@@ -604,9 +628,13 @@ const reserve: Room = {
     { kind: "jar", rect: { x: 20.5, y: 5.0, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.9 },
     { kind: "jar", rect: { x: 19.4, y: 6.1, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.8 },
     { kind: "lens", rect: { x: 21.9, y: 4.7, w: 1.6, h: 2.4 }, z: -1.5, color: COOL_KEY, intensity: 0.8 },
-    { kind: "crate", rect: { x: 27.6, y: 0, w: 2.0, h: 1.0 }, z: 0 },
+    { kind: "conduit", rect: { x: 16.3, y: 7.3, w: 5.9, h: 0.22 }, z: -1.45, color: EMBER, intensity: 0.8 },
+    { kind: "conduit", rect: { x: 15.9, y: 3.66, w: 7.6, h: 0.22 }, z: -1.45, color: EMBER, intensity: 0.55 },
+    { kind: "rack", rect: { x: 27.4, y: 0, w: 2.2, h: 2.5 }, z: -1.6 },
+    { kind: "jar", rect: { x: 27.8, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.8 },
+    { kind: "jar", rect: { x: 28.9, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.7 },
     { kind: "embers", rect: { x: 2, y: 0, w: 26, h: 9 }, z: -1.8, intensity: 0.2 },
-    { kind: "lamp", rect: { x: 0, y: 0, w: 3.0, h: 4.1 }, z: -0.9 }
+    { kind: "lamp", rect: { x: 5.0, y: 0, w: 3.0, h: 4.1 }, z: -0.9 }
   ],
   waypoints: [
     { x: 2.4, y: 0 },
@@ -623,7 +651,7 @@ const reserve: Room = {
     { x: 25.0, y: 3.38 },
     { x: 25.9, y: 2.58 },
     { x: 26.8, y: 1.78 },
-    { x: 28.6, y: 1.0 }
+    { x: 29.0, y: 0 }
   ]
 };
 
@@ -636,19 +664,19 @@ const sunwell: Room = {
     { x: -2, y: 0, w: 2, h: 10 },
     { x: 12, y: 0, w: 2, h: 10 },
     { x: -2, y: 8, w: 16, h: 2 },
-    { x: 4.2, y: 0.4, w: 2.2, h: 0.16 },
-    { x: 8.2, y: 0, w: 1.8, h: 0.9 }
+    { x: 6.6, y: 0.4, w: 2.2, h: 0.16 },
+    { x: 2.4, y: 0, w: 1.4, h: 0.9 }
   ],
   doors: [
     {
-      rect: { x: -0.6, y: 0, w: 1.2, h: 2.8 },
+      rect: { x: 11.4, y: 0, w: 1.2, h: 2.8 },
       to: "landing",
       entry: { x: 2.4, y: 0 },
       entryFacing: 1
     }
   ],
   enemies: [],
-  pickups: [{ id: "flask-2", kind: "emberFlask", x: 9.1, y: 1.0 }],
+  pickups: [{ id: "flask-2", kind: "emberFlask", x: 3.0, y: 1.0 }],
   gates: [],
   breakables: [],
   ambience: sunwellAmbience,
@@ -656,25 +684,130 @@ const sunwell: Room = {
   decor: [
     { kind: "block", rect: { x: -3, y: 0, w: 18, h: 2.6 }, z: -13 },
     { kind: "wall", rect: { x: 0, y: 0, w: 12, h: 8 }, z: -4.2 },
-    { kind: "pillar", rect: { x: 0.8, y: 0, w: 1.0, h: 8 }, z: -3.4 },
-    { kind: "pillar", rect: { x: 6.2, y: 0, w: 1.0, h: 8 }, z: -3.4 },
-    { kind: "glow", rect: { x: 6.6, y: 0.2, w: 5.4, h: 5.4 }, z: -3.0, color: EMBER, intensity: 0.6 },
-    { kind: "glow", rect: { x: 1.4, y: 0.2, w: 5.0, h: 5.0 }, z: -3.0, color: DAWN_KEY, intensity: 0.3 },
-    { kind: "sunlight", rect: { x: 7.6, y: 0.9, w: 2.6, h: 7.1 }, z: -2.4, color: DAWN_KEY, intensity: 1 },
-    { kind: "rubble", rect: { x: 1.3, y: 0, w: 2.6, h: 1.1 }, z: -1.6 },
-    { kind: "embers", rect: { x: 1, y: 0, w: 10, h: 6 }, z: -1.8, intensity: 0.3 },
-    { kind: "bench", rect: { x: 4.2, y: 0, w: 2.2, h: 0.56 }, z: 0 },
-    { kind: "crate", rect: { x: 8.2, y: 0, w: 1.8, h: 0.9 }, z: 0 }
+    { kind: "block", rect: { x: 0, y: 5.2, w: 1.4, h: 2.8 }, z: -3.9 },
+    { kind: "block", rect: { x: 4.3, y: 5.2, w: 1.7, h: 2.8 }, z: -3.9 },
+    { kind: "pillar", rect: { x: 0.5, y: 0, w: 0.9, h: 8 }, z: -3.4 },
+    { kind: "pillar", rect: { x: 4.5, y: 0, w: 0.9, h: 8 }, z: -3.4 },
+    { kind: "arch", rect: { x: 6.0, y: 0, w: 3.6, h: 5.4 }, z: -3.6 },
+    { kind: "glow", rect: { x: 1.3, y: 4.9, w: 3.2, h: 3.2 }, z: -3.0, color: DAWN_KEY, intensity: 0.32 },
+    { kind: "sunlight", rect: { x: 1.5, y: 0, w: 2.8, h: 8 }, z: -2.4, color: DAWN_KEY, intensity: 1 },
+    { kind: "rubble", rect: { x: 0.9, y: 0, w: 3.6, h: 0.8 }, z: -1.6 },
+    { kind: "embers", rect: { x: 1.5, y: 0, w: 2.8, h: 7.4 }, z: -1.2, intensity: 0.8 },
+    { kind: "wall", rect: { x: 2.4, y: 0, w: 1.4, h: 0.9 }, z: 0 },
+    { kind: "bench", rect: { x: 6.6, y: 0, w: 2.2, h: 0.56 }, z: 0 }
   ],
   waypoints: [
-    { x: 2.4, y: 0 },
-    { x: 5.2, y: 0.56 },
-    { x: 7.4, y: 0 },
-    { x: 9.1, y: 0.9 }
+    { x: 9.6, y: 0 },
+    { x: 7.7, y: 0.56 },
+    { x: 5.4, y: 0 },
+    { x: 3.0, y: 0.9 }
   ]
 };
 
-export const rooms: Room[] = [landing, gallery, cache, belfry, vault, reserve, sunwell];
+const lenshall: Room = {
+  id: "lenshall",
+  name: roomNames.lenshall,
+  bounds: { x: 0, y: 0, w: 28, h: 14 },
+  solids: [
+    { x: -2, y: -2, w: 32, h: 2 },
+    { x: -2, y: 0, w: 2, h: 16 },
+    { x: 28, y: 0, w: 2, h: 16 },
+    { x: -2, y: 14, w: 32, h: 2 },
+    { x: 6.2, y: 0.12, w: 1.0, h: 0.28 },
+    { x: 7.2, y: 0.52, w: 1.0, h: 0.28 },
+    { x: 8.2, y: 0.92, w: 1.0, h: 0.28 },
+    { x: 9.2, y: 0, w: 5.8, h: 1.2 },
+    { x: 15.0, y: 1.68, w: 1.0, h: 0.28 },
+    { x: 16.0, y: 2.44, w: 1.0, h: 0.28 },
+    { x: 17.0, y: 3.2, w: 1.0, h: 0.28 },
+    { x: 18.0, y: 3.96, w: 1.0, h: 0.28 },
+    { x: 19.0, y: 4.72, w: 1.0, h: 0.28 },
+    { x: 20.0, y: 4.4, w: 8.0, h: 0.6 },
+    { x: 25.6, y: 5.0, w: 1.8, h: 0.9 }
+  ],
+  doors: [
+    {
+      rect: { x: -0.6, y: 0, w: 1.2, h: 3.0 },
+      to: "reserve",
+      entry: { x: 28.4, y: 0 },
+      entryFacing: -1
+    }
+  ],
+  enemies: [
+    { id: 5, kind: "sentry", x: 13.4, y: 1.2, patrolMinX: 13.4, patrolMaxX: 13.4, facing: -1 },
+    { id: 6, kind: "sentry", x: 24.4, y: 5.0, patrolMinX: 24.4, patrolMaxX: 24.4, facing: -1 }
+  ],
+  pickups: [{ id: "dawn-core", kind: "dawnCore", x: 26.5, y: 6.3 }],
+  gates: [],
+  breakables: [],
+  ambience: lensHallAmbience,
+  music: "reserve",
+  decor: [
+    { kind: "block", rect: { x: -3, y: 0, w: 34, h: 3.2 }, z: -13 },
+    { kind: "block", rect: { x: -3, y: 0, w: 4, h: 16 }, z: -13 },
+    { kind: "block", rect: { x: 26.4, y: 0, w: 6, h: 16 }, z: -13 },
+    { kind: "wall", rect: { x: 0, y: 0, w: 28, h: 14 }, z: -4.2, intensity: 1 },
+    { kind: "pillar", rect: { x: 3.2, y: 0, w: 1.0, h: 14 }, z: -3.4 },
+    { kind: "pillar", rect: { x: 14.6, y: 0, w: 1.0, h: 14 }, z: -3.4 },
+    { kind: "pillar", rect: { x: 26.6, y: 0, w: 1.0, h: 14 }, z: -3.4 },
+    { kind: "arch", rect: { x: 4.2, y: 0, w: 10.4, h: 7.4 }, z: -3.6, intensity: 1 },
+    { kind: "arch", rect: { x: 15.6, y: 0, w: 11.0, h: 8.4 }, z: -3.6, intensity: 1 },
+    { kind: "glow", rect: { x: 24.2, y: 4.4, w: 5.6, h: 5.6 }, z: -3.0, color: EMBER, intensity: 0.4 },
+    { kind: "pipe", rect: { x: 0, y: 9.4, w: 26.6, h: 0.3 }, z: -2.6, intensity: 1 },
+    { kind: "pipe", rect: { x: 6.0, y: 7.9, w: 0.3, h: 1.5 }, z: -2.6 },
+    { kind: "pipe", rect: { x: 12.0, y: 7.9, w: 0.3, h: 1.5 }, z: -2.6 },
+    { kind: "pipe", rect: { x: 18.0, y: 7.9, w: 0.3, h: 1.5 }, z: -2.6 },
+    { kind: "pipe", rect: { x: 24.0, y: 7.9, w: 0.3, h: 1.5 }, z: -2.6 },
+    { kind: "pipe", rect: { x: 0, y: 3.6, w: 2.6, h: 0.3 }, z: -2.4, intensity: 1 },
+    { kind: "rack", rect: { x: 0.9, y: 0, w: 2.4, h: 2.6 }, z: -1.6 },
+    { kind: "jar", rect: { x: 1.3, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 1 },
+    { kind: "jar", rect: { x: 2.4, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.9 },
+    { kind: "jar", rect: { x: 1.3, y: 1.4, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.8 },
+    { kind: "rack", rect: { x: 9.5, y: 1.2, w: 2.2, h: 2.5 }, z: -1.6 },
+    { kind: "jar", rect: { x: 9.9, y: 1.5, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 1 },
+    { kind: "jar", rect: { x: 10.9, y: 1.5, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.85 },
+    { kind: "jar", rect: { x: 9.9, y: 2.6, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.7 },
+    { kind: "rack", rect: { x: 24.6, y: 0, w: 2.4, h: 2.6 }, z: -1.6 },
+    { kind: "jar", rect: { x: 25.0, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.9 },
+    { kind: "jar", rect: { x: 26.1, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.8 },
+    { kind: "jar", rect: { x: 25.0, y: 1.4, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.7 },
+    { kind: "lens", rect: { x: 4.4, y: 0, w: 2.0, h: 2.975 }, z: -1.5, color: COOL_KEY, intensity: 0.9 },
+    { kind: "lens", rect: { x: 11.5, y: 1.2, w: 1.0, h: 1.275 }, z: -1.5, color: COOL_KEY, intensity: 0.8 },
+    { kind: "lens", rect: { x: 21.2, y: 0, w: 2.3, h: 6.925 }, z: -1.5, color: COOL_KEY, intensity: 1 },
+    { kind: "lens", rect: { x: 20.1, y: 5.0, w: 1.0, h: 1.275 }, z: -1.5, color: COOL_KEY, intensity: 0.8 },
+    { kind: "conduit", rect: { x: 1.3, y: 2.78, w: 3.5, h: 0.22 }, z: -1.45, color: EMBER, intensity: 0.8 },
+    { kind: "conduit", rect: { x: 1.5, y: 2.1, w: 0.2, h: 0.72 }, z: -1.45, color: EMBER, intensity: 0.65 },
+    { kind: "conduit", rect: { x: 9.9, y: 3.84, w: 2.7, h: 0.22 }, z: -1.45, color: EMBER, intensity: 0.75 },
+    { kind: "conduit", rect: { x: 11.9, y: 2.45, w: 0.2, h: 1.42 }, z: -1.45, color: EMBER, intensity: 0.6 },
+    { kind: "conduit", rect: { x: 20.2, y: 4.02, w: 7.2, h: 0.22 }, z: -1.45, color: EMBER, intensity: 0.55 },
+    { kind: "embers", rect: { x: 2, y: 0, w: 24, h: 10 }, z: -1.8, intensity: 0.15 },
+    { kind: "lamp", rect: { x: 4.2, y: 0, w: 3.0, h: 4.1 }, z: -0.9 },
+    { kind: "stair", rect: { x: 6.2, y: 0, w: 3.0, h: 1.2 }, z: 0 },
+    { kind: "wall", rect: { x: 9.2, y: 0, w: 5.8, h: 1.2 }, z: 0 },
+    { kind: "stair", rect: { x: 15.0, y: 0, w: 5.0, h: 5.0 }, z: 0 },
+    { kind: "gallery", rect: { x: 20.0, y: 0, w: 8.0, h: 5.0 }, z: 0 },
+    { kind: "crate", rect: { x: 25.6, y: 5.0, w: 1.8, h: 0.9 }, z: 0 }
+  ],
+  waypoints: [
+    { x: 2.0, y: 0 },
+    { x: 5.0, y: 0 },
+    { x: 6.7, y: 0.4 },
+    { x: 7.7, y: 0.8 },
+    { x: 8.7, y: 1.2 },
+    { x: 11.0, y: 1.2 },
+    { x: 14.4, y: 1.2 },
+    { x: 15.5, y: 1.96 },
+    { x: 16.5, y: 2.72 },
+    { x: 17.5, y: 3.48 },
+    { x: 18.5, y: 4.24 },
+    { x: 19.5, y: 5.0 },
+    { x: 22.5, y: 5.0 },
+    { x: 25.0, y: 5.0 },
+    { x: 26.5, y: 5.9 }
+  ]
+};
+
+export const rooms: Room[] = [landing, gallery, cache, belfry, vault, reserve, lenshall, sunwell];
 
 export const demoStart: { room: string; pos: Vec2 } = {
   room: "gallery",
