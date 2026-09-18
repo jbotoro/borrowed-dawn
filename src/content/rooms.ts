@@ -242,7 +242,7 @@ const gallery: Room = {
     { x: 3.44, y: 6.35, w: 1.4, h: 0.4 },
     { x: 2.06, y: 7.2, w: 1.38, h: 0.4 },
     { x: 0, y: 6.6, w: 2.06, h: 1.0 },
-    { x: 0, y: 9.6, w: 3.4, h: 1.2 },
+    { x: 0.9, y: 9.6, w: 1.6, h: 1.2 },
     { x: 15.0, y: 4.9, w: 1.6, h: 0.3 },
     { x: 17.8, y: 6.4, w: 3.8, h: 0.45 },
     { x: 24.0, y: 7.7, w: 2.2, h: 0.35 },
@@ -319,7 +319,7 @@ const gallery: Room = {
     { kind: "embers", rect: { x: 39.4, y: 0, w: 2.4, h: 5 }, z: -0.3, intensity: 1 },
     { kind: "lamp", rect: { x: 7.3, y: 2.16, w: 1.2, h: 1.4 }, z: -0.9 },
     { kind: "wall", rect: { x: 0, y: 6.6, w: 2.06, h: 1.0 }, z: 0 },
-    { kind: "wall", rect: { x: 0, y: 9.6, w: 3.4, h: 1.2 }, z: 0, intensity: 1 },
+    { kind: "wall", rect: { x: 0.9, y: 9.6, w: 1.6, h: 1.2 }, z: 0 },
     { kind: "stair", rect: { x: 2.06, y: 3.75, w: 6.84, h: 3.9 }, z: 0 },
     { kind: "stair", rect: { x: 5.4, y: 0, w: 8.2, h: 3.6 }, z: 0 },
     { kind: "gallery", rect: { x: 13.6, y: 0, w: 13.9, h: 3.6 }, z: 0 },
@@ -634,7 +634,9 @@ const reserve: Room = {
     { kind: "jar", rect: { x: 27.8, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.8 },
     { kind: "jar", rect: { x: 28.9, y: 0.3, w: 0.5, h: 0.7 }, z: -1.4, color: EMBER, intensity: 0.7 },
     { kind: "embers", rect: { x: 2, y: 0, w: 26, h: 9 }, z: -1.8, intensity: 0.2 },
-    { kind: "lamp", rect: { x: 5.0, y: 0, w: 3.0, h: 4.1 }, z: -0.9 }
+    { kind: "lamp", rect: { x: 5.0, y: 0, w: 3.0, h: 4.1 }, z: -0.9 },
+    { kind: "veil", rect: { x: -8, y: 0, w: 8, h: 3.0 }, z: 0 },
+    { kind: "veil", rect: { x: 30, y: 0, w: 8, h: 3.0 }, z: 0 }
   ],
   waypoints: [
     { x: 2.4, y: 0 },
@@ -786,7 +788,8 @@ const lenshall: Room = {
     { kind: "wall", rect: { x: 9.2, y: 0, w: 5.8, h: 1.2 }, z: 0 },
     { kind: "stair", rect: { x: 15.0, y: 0, w: 5.0, h: 5.0 }, z: 0 },
     { kind: "gallery", rect: { x: 20.0, y: 0, w: 8.0, h: 5.0 }, z: 0 },
-    { kind: "crate", rect: { x: 25.6, y: 5.0, w: 1.8, h: 0.9 }, z: 0 }
+    { kind: "crate", rect: { x: 25.6, y: 5.0, w: 1.8, h: 0.9 }, z: 0 },
+    { kind: "veil", rect: { x: -8, y: 0, w: 8, h: 3.0 }, z: 0 }
   ],
   waypoints: [
     { x: 2.0, y: 0 },

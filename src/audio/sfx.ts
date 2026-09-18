@@ -464,17 +464,17 @@ function checkpoint(synth: Synth, dest: AudioNode, at: number): void {
 
 function guardTelegraph(synth: Synth, dest: AudioNode, at: number): void {
   noiseBurst(synth, dest, at, {
-    gain: 0.12,
+    gain: 0.06,
     attack: 0.04,
     decay: 0.3,
     filter: { type: "bandpass", freq: 380, freqTo: 2300, sweep: 0.3, q: 6 }
   });
   tone(synth, dest, at, {
     type: "sawtooth",
-    freq: 124,
-    freqTo: 268,
+    freq: 110.0,
+    freqTo: 220.0,
     glide: 0.3,
-    gain: 0.05,
+    gain: 0.025,
     attack: 0.05,
     decay: 0.3,
     filter: { type: "bandpass", freq: 700, freqTo: 1600, sweep: 0.3, q: 4 }
@@ -484,20 +484,20 @@ function guardTelegraph(synth: Synth, dest: AudioNode, at: number): void {
 function guardAttack(synth: Synth, dest: AudioNode, at: number): void {
   tone(synth, dest, at, {
     type: "sine",
-    freq: 176,
-    freqTo: 48,
+    freq: 146.83,
+    freqTo: 36.71,
     glide: 0.11,
-    gain: 0.24,
+    gain: 0.12,
     decay: 0.17
   });
-  metal(synth, dest, at, 288, [1, 2.68], {
-    gain: 0.1,
+  metal(synth, dest, at, 293.66, [1, 2.68], {
+    gain: 0.05,
     decay: 0.13,
     falloff: 0.5,
     filter: { type: "lowpass", freq: 1200, q: 0.8 }
   });
   noiseBurst(synth, dest, at, {
-    gain: 0.15,
+    gain: 0.075,
     attack: 0.001,
     decay: 0.09,
     filter: { type: "lowpass", freq: 1900, freqTo: 480, sweep: 0.09, q: 1.1 }
@@ -506,17 +506,17 @@ function guardAttack(synth: Synth, dest: AudioNode, at: number): void {
 
 function stomperTelegraph(synth: Synth, dest: AudioNode, at: number): void {
   noiseBurst(synth, dest, at, {
-    gain: 0.09,
+    gain: 0.045,
     attack: 0.2,
     decay: 0.18,
     filter: { type: "bandpass", freq: 2700, freqTo: 5200, sweep: 0.34, q: 0.9 }
   });
   tone(synth, dest, at, {
     type: "triangle",
-    freq: 300,
-    freqTo: 430,
+    freq: 293.66,
+    freqTo: 440.0,
     glide: 0.32,
-    gain: 0.03,
+    gain: 0.015,
     attack: 0.18,
     decay: 0.2,
     filter: { type: "highpass", freq: 900, q: 0.7 }
@@ -524,108 +524,108 @@ function stomperTelegraph(synth: Synth, dest: AudioNode, at: number): void {
 }
 
 function stomperAttack(synth: Synth, dest: AudioNode, at: number): void {
-  metal(synth, dest, at, 536, [1, 1.47, 2.93], {
-    gain: 0.15,
+  metal(synth, dest, at, 523.25, [1, 1.47, 2.93], {
+    gain: 0.075,
     decay: 0.14,
     falloff: 0.48,
     spread: 0.3,
     filter: { type: "bandpass", freq: 1650, q: 1.3 }
   });
   noiseBurst(synth, dest, at, {
-    gain: 0.1,
+    gain: 0.05,
     attack: 0.001,
     decay: 0.04,
     filter: { type: "bandpass", freq: 940, q: 5 }
   });
   tone(synth, dest, at, {
     type: "square",
-    freq: 94,
-    freqTo: 66,
+    freq: 98.0,
+    freqTo: 73.42,
     glide: 0.1,
-    gain: 0.07,
+    gain: 0.035,
     decay: 0.11,
     filter: { type: "lowpass", freq: 620, q: 0.9 }
   });
 }
 
 function lamplighterTelegraph(synth: Synth, dest: AudioNode, at: number): void {
-  metal(synth, dest, at, 1240, [1, 2.76], {
-    gain: 0.07,
-    decay: 0.18,
-    falloff: 0.45,
+  metal(synth, dest, at, 1174.66, [1, 2.0], {
+    gain: 0.03,
+    decay: 0.22,
+    falloff: 0.35,
     spread: 0.3,
-    filter: { type: "highpass", freq: 900, q: 0.7 }
+    filter: { type: "highpass", freq: 700, q: 0.7 }
   });
-  metal(synth, dest, at + 0.17, 1560, [1, 2.76], {
-    gain: 0.08,
-    decay: 0.2,
-    falloff: 0.45,
+  metal(synth, dest, at + 0.17, 1396.91, [1, 2.0], {
+    gain: 0.034,
+    decay: 0.26,
+    falloff: 0.35,
     spread: 0.3,
-    filter: { type: "highpass", freq: 1000, q: 0.7 }
+    filter: { type: "highpass", freq: 800, q: 0.7 }
   });
 }
 
 function lamplighterAttack(synth: Synth, dest: AudioNode, at: number): void {
   noiseBurst(synth, dest, at, {
-    gain: 0.1,
-    attack: 0.035,
-    decay: 0.24,
-    filter: { type: "bandpass", freq: 1900, freqTo: 400, sweep: 0.24, q: 1.1 }
+    gain: 0.045,
+    attack: 0.09,
+    decay: 0.3,
+    filter: { type: "bandpass", freq: 900, freqTo: 320, sweep: 0.3, q: 0.8 }
   });
   tone(synth, dest, at, {
     type: "sine",
-    freq: 640,
-    freqTo: 230,
-    glide: 0.22,
-    gain: 0.05,
-    attack: 0.03,
-    decay: 0.22
+    freq: 587.33,
+    freqTo: 293.66,
+    glide: 0.26,
+    gain: 0.022,
+    attack: 0.07,
+    decay: 0.26
   });
 }
 
 function sentryTelegraph(synth: Synth, dest: AudioNode, at: number): void {
   tone(synth, dest, at, {
     type: "sine",
-    freq: 610,
-    freqTo: 1960,
+    freq: 587.33,
+    freqTo: 880.0,
     glide: 0.84,
-    gain: 0.07,
+    gain: 0.035,
     attack: 0.14,
     decay: 0.82
   });
   tone(synth, dest, at, {
     type: "triangle",
-    freq: 915,
-    freqTo: 2940,
+    freq: 1174.66,
+    freqTo: 1760.0,
     glide: 0.84,
-    gain: 0.022,
+    gain: 0.011,
     attack: 0.22,
     decay: 0.78
   });
   noiseBurst(synth, dest, at, {
-    gain: 0.03,
+    gain: 0.015,
     attack: 0.3,
     decay: 0.58,
-    filter: { type: "bandpass", freq: 3000, freqTo: 6200, sweep: 0.8, q: 6 }
+    filter: { type: "bandpass", freq: 3000, freqTo: 4200, sweep: 0.8, q: 6 }
   });
 }
 
 function sentryAttack(synth: Synth, dest: AudioNode, at: number): void {
   noiseBurst(synth, dest, at, {
-    gain: 0.16,
+    gain: 0.08,
     attack: 0.001,
     decay: 0.045,
     filter: { type: "highpass", freq: 3800, q: 0.8 }
   });
-  metal(synth, dest, at, 2380, [1, 1.93], {
-    gain: 0.09,
+  metal(synth, dest, at, 2349.32, [1, 1.93], {
+    gain: 0.045,
     decay: 0.13,
     falloff: 0.5,
     spread: 0.3
   });
   for (let i = 0; i < 3; i += 1) {
     noiseBurst(synth, dest, at + 0.045 + i * 0.038, {
-      gain: 0.045 - i * 0.01,
+      gain: 0.0225 - i * 0.005,
       attack: 0.001,
       decay: 0.025,
       filter: { type: "bandpass", freq: 4600 + Math.sin(i * 9.7) * 1200, q: 9 }

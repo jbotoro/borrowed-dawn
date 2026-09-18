@@ -45,16 +45,19 @@ const WARM_TARGETS: Record<string, boolean> = {
   vault: true,
   sunwell: true
 };
-const PALE_TARGETS: Record<string, boolean> = {
+const DIM_TARGETS: Record<string, boolean> = {
   reserve: true,
   lenshall: true
 };
 const GLASS_TINT = 0xc8d6e4;
-const PALE_SPILL = 0xb6cde2;
 const HALO_SIZE = 64;
-const JAMB_ORB_RADIUS = 0.5;
+const JAMB_ORB_RADIUS = 0.24;
 const DOOR_LIGHT_DAWN_CAP = 1.3;
 const PLATFORM_KINDS: DecorKind[] = ["stair", "gallery", "beam", "bench", "crate", "wall"];
+const PLATE_PITCH_X = 1.4;
+const PLATE_PITCH_Y = 1.0;
+const PASSAGE_HEAD_GAP = 0.9;
+const VEIL_SEAM_OFFSET = 0.07;
 
 interface Tagged {
   id: string;
@@ -124,7 +127,7 @@ interface DoorPlate {
   lift: number;
 }
 
-type PassageTone = "warm" | "pale" | "ash";
+type PassageTone = "warm" | "dim" | "ash";
 
 interface Opening {
   door: Door;
@@ -168,6 +171,8 @@ interface Veil {
   stone: THREE.Material;
   stoneDark: THREE.Material;
   stoneLit: THREE.Material;
+  iron: THREE.Material;
+  riveted: boolean;
   outline: THREE.Material | null;
 }
 
@@ -451,6 +456,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   const decorLights: { light: THREE.PointLight; priority: number }[] = [];
   let currentOpenings: Opening[] = [];
   let currentRoom: Room | null = null;
+  let ironRoom = false;
+  let paleRoom = false;
   let sealedOpenings = new Set<Opening>();
   const doorGlows: DoorGlow[] = [];
   const doorPanels: DoorPanel[] = [];
@@ -768,6 +775,39 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   ): void {
     addBox(w, h, d, x, y, z, material, parent, true);
     addRivets(x, y, w, h, z + d * 0.5 + 0.02, parent, ironMat);
+  }
+
+  function addPlateGrid(
+    area: Rect,
+    anchorY: number,
+    front: number,
+    parent: THREE.Object3D,
+    lineMat: THREE.Material,
+    rivetMat: THREE.Material,
+    offsetRow: number
+  ): void {
+    const cols = Math.max(1, Math.round(area.w / PLATE_PITCH_X));
+    const pw = area.w / cols;
+    const ph = PLATE_PITCH_Y;
+    const first = Math.floor((area.y - anchorY) / ph + 0.001);
+    const last = Math.ceil((area.y + area.h - anchorY) / ph - 0.001);
+    let row = 0;
+    for (let k = first; k < last; k++) {
+      const seamY = anchorY + k * ph;
+      const y0 = Math.max(seamY, area.y);
+      const y1 = Math.min(seamY + ph, area.y + area.h);
+      const h = y1 - y0;
+      if (h < 0.05) continue;
+      const onSeam = seamY >= area.y - 0.001;
+      const shift = row === offsetRow ? VEIL_SEAM_OFFSET : 0;
+      for (let i = 0; i < cols; i++) {
+        const px = area.x + (i + 0.5) * pw;
+        if (onSeam) addBox(pw - 0.05, 0.03, 0.012, px, seamY + shift, front, lineMat, parent);
+        addBox(0.03, h - 0.05, 0.012, area.x + i * pw, y0 + h * 0.5, front, lineMat, parent);
+        if (h >= ph - 0.01) addRivets(px, seamY + ph * 0.5, pw - 0.1, ph - 0.1, front + 0.03, parent, rivetMat);
+      }
+      row++;
+    }
   }
 
   function clear(): void {
@@ -1365,7 +1405,12 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       }
       for (const piece of punchOpenings(source, holes.map((o) => o.rect))) masses.push(piece);
     }
+    const shelf = hatches.length > 0 && !far;
     for (const mass of masses) {
+      if (shelf) {
+        addShelfMass(mass, depth, z, feel);
+        continue;
+      }
       addRect(mass, depth, z, far ? farMat : wallMat, group, !far);
       if (solids.length > 0 && !far) addRim(mass, depth, z, group, feel);
       if (far) continue;
@@ -1390,7 +1435,20 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     }
     const room = currentRoom;
     if (room !== null) {
-      for (const hatch of hatches) addVerticalPassage(hatch, room, feel);
+      const b = room.bounds;
+      for (const hatch of hatches) {
+        addVerticalPassage(hatch, room, feel);
+        if (hatch.side !== "ceiling") continue;
+        const r = hatch.rect;
+        const leftGap = r.x - b.x;
+        const rightGap = b.x + b.w - (r.x + r.w);
+        if (masses.length > 0) continue;
+        if (leftGap > 0.1 && leftGap <= 1.6) {
+          addShelfMass({ x: b.x, y: r.y, w: leftGap - 0.14, h: r.h }, depth, z, feel);
+        } else if (rightGap > 0.1 && rightGap <= 1.6) {
+          addShelfMass({ x: r.x + r.w + 0.14, y: r.y, w: rightGap - 0.14, h: r.h }, depth, z, feel);
+        }
+      }
     }
   }
 
@@ -1412,9 +1470,31 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
         solid.y + solid.h <= b.y + 0.01 ||
         solid.y >= b.y + b.h - 0.01;
       if (!isBoundary) continue;
+      if (rectsTouch(rect, solid, -0.01)) return solid;
+    }
+    for (const solid of room.solids) {
+      const isBoundary =
+        solid.x + solid.w <= b.x + 0.01 ||
+        solid.x >= b.x + b.w - 0.01 ||
+        solid.y + solid.h <= b.y + 0.01 ||
+        solid.y >= b.y + b.h - 0.01;
+      if (!isBoundary) continue;
       if (rectsTouch(rect, solid, 0.05)) return solid;
     }
     return null;
+  }
+
+  function rivetedWallTouching(rect: Rect, room: Room): boolean {
+    return room.decor.some(
+      (d) => d.kind === "wall" && (d.intensity ?? 0) >= 1 && rectsTouch(d.rect, rect, 0.2)
+    );
+  }
+
+  function tinted(material: LitMaterial, source: LitMaterial): LitMaterial {
+    material.color.copy(source.color);
+    material.emissive.copy(source.emissive);
+    material.emissiveIntensity = source.emissiveIntensity;
+    return material;
   }
 
   function addVeil(decor: Decor, feel: Feel): void {
@@ -1424,13 +1504,23 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const depth = feel.solidDepth;
     const rest = Math.max(feel.veilRestOpacity, 0);
     const z = decor.z + 0.02;
+    const riveted = rivetedWallTouching(rect, room);
 
-    const face = fading(transient(look.material("backgroundNear")), rest);
+    const face = fading(
+      transient(
+        riveted ? tinted(look.litMaterial("backgroundNear"), wallMat) : look.material("backgroundNear")
+      ),
+      rest
+    );
     const lineMat = fading(
       transient(new THREE.MeshBasicMaterial({ color: ramp.void, fog: false })),
       rest
     );
-    const pilasterMat = fading(transient(look.material("architecture", { shade: 0.74 })), rest);
+    const rivetMat = fading(transient(tinted(look.litMaterial("chain", { shade: 0.62 }), ironDarkMat)), rest);
+    const pilasterMat = fading(
+      transient(tinted(look.litMaterial("architecture", { shade: 0.74 }), stoneDarkMat)),
+      rest
+    );
     const hideOutline = outlined
       ? fading(
           transient(
@@ -1454,23 +1544,50 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       hide: [
         { material: face, base: 1 },
         { material: lineMat, base: 1 },
+        { material: rivetMat, base: 1 },
         { material: pilasterMat, base: 1 }
       ],
       show: [],
       lights: [],
-      stone: fading(transient(look.material("architecture")), 0),
-      stoneDark: fading(transient(look.material("architecture", { shade: 0.74 })), 0),
-      stoneLit: fading(transient(look.material("architecture", { shade: 1.12 })), 0),
+      stone: fading(
+        transient(riveted ? tinted(look.litMaterial("chain"), ironMat) : look.material("architecture")),
+        0
+      ),
+      stoneDark: fading(
+        transient(
+          riveted
+            ? tinted(look.litMaterial("chain", { shade: 0.62 }), ironDarkMat)
+            : look.material("architecture", { shade: 0.74 })
+        ),
+        0
+      ),
+      stoneLit: fading(
+        transient(
+          riveted
+            ? tinted(look.litMaterial("backgroundNear", { shade: 0.9 }), faceMat)
+            : look.material("architecture", { shade: 1.12 })
+        ),
+        0
+      ),
+      iron: fading(transient(tinted(look.litMaterial("chain", { shade: 0.62 }), ironDarkMat)), 0),
+      riveted,
       outline: showOutline
     };
     if (hideOutline !== null) veil.hide.push({ material: hideOutline, base: 1 });
     veil.show.push({ material: veil.stone, base: 1 });
     veil.show.push({ material: veil.stoneDark, base: 1 });
     veil.show.push({ material: veil.stoneLit, base: 1 });
+    veil.show.push({ material: veil.iron, base: 1 });
     if (showOutline !== null) veil.show.push({ material: showOutline, base: 1 });
     veils.push(veil);
+    let passageH = rect.h;
     for (const opening of currentOpenings) {
-      if (rectsTouch(opening.rect, rect, 0.2)) veilByOpening.set(opening, veil);
+      if (!rectsTouch(opening.rect, rect, 0.2)) continue;
+      veilByOpening.set(opening, veil);
+      if (opening.side === "left" || opening.side === "right") {
+        const head = paleRoom ? 0 : PASSAGE_HEAD_GAP;
+        passageH = Math.max(passageH, opening.rect.y + opening.rect.h + head - rect.y);
+      }
     }
 
     const wall = boundaryUnder(rect, room);
@@ -1494,20 +1611,23 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
 
     const strip: Rect =
       wall === null ? faceRect : { x: wall.x, y: rect.y, w: wall.w, h: rect.h };
-    addCourses(strip, depth, z, group, feel, strip.x + strip.y, lineMat);
-
-    const front = z + depth * 0.5 + lift * 2;
-    const tellY = rect.y + Math.min(Math.max(feel.courseSpacing, 0.3) * 0.5, rect.h * 0.3);
-    addBox(strip.w * 0.44, 0.05, 0.014, strip.x + strip.w * 0.24, tellY, front, lineMat, group);
+    if (riveted) {
+      addPlateGrid(strip, b.y, z + depth * 0.5 + 0.006, group, lineMat, rivetMat, 1);
+    } else {
+      addCourses(strip, depth, z, group, feel, strip.x + strip.y, lineMat);
+      const front = z + depth * 0.5 + lift * 2;
+      const tellY = rect.y + Math.min(Math.max(feel.courseSpacing, 0.3) * 0.5, rect.h * 0.3);
+      addBox(strip.w * 0.44, 0.05, 0.014, strip.x + strip.w * 0.24, tellY, front, lineMat, group);
+    }
 
     if (wall !== null && dir !== 0) {
       const innerX = dir > 0 ? wall.x : wall.x + wall.w;
       addBox(
         0.5,
-        rect.h,
+        passageH,
         depth + 0.24,
         innerX + dir * (0.25 - lift * 3),
-        rect.y + rect.h * 0.5,
+        rect.y + passageH * 0.5,
         z,
         pilasterMat,
         group,
@@ -2127,15 +2247,33 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const z = decor.z;
     const cx = rect.x + rect.w * 0.5;
     const cy = rect.y + rect.h * 0.5;
-    const radius = Math.max(Math.min(rect.w, rect.h), 0.8) * 0.5;
     const hex = decor.color === undefined ? ramp.amber : decor.color;
     const plateD = Math.max(feel.gateDepth, 0.3) * 0.4;
+    const passage = currentOpenings.find(
+      (o) => (o.side === "left" || o.side === "right") && rectsTouch(o.rect, rect, 1.4)
+    );
+    let radius = Math.max(Math.min(rect.w, rect.h), 0.8) * 0.5;
+    let px = cx;
+    let pz = z;
+    let turn = 0;
+    if (passage !== undefined) {
+      const o = passage.rect;
+      const right = passage.side === "right";
+      const dir = right ? 1 : -1;
+      const innerX = right ? o.x : o.x + o.w;
+      radius = Math.max(Math.min(feel.solidDepth * 0.5 - 0.1, rect.h * 0.5 - 0.06), 0.4);
+      px = innerX - dir * (plateD * 0.5 + 0.04);
+      pz = 0;
+      turn = -dir * Math.PI * 0.5;
+    }
 
     const sealed = new THREE.Group();
-    sealed.position.set(cx, cy, z);
+    sealed.position.set(px, cy, pz);
+    sealed.rotation.y = turn;
     group.add(sealed);
     const open = new THREE.Group();
-    open.position.set(cx, cy, z);
+    open.position.set(px, cy, pz);
+    open.rotation.y = turn;
     open.visible = false;
     group.add(open);
 
@@ -2202,14 +2340,6 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       sealed.add(rivet);
     }
 
-    const seam = new THREE.Mesh(
-      track(new THREE.CircleGeometry(radius * 1.55, 30)),
-      spillMaterial(hex, feel.passageSpillOpacity * 0.7)
-    );
-    radialFalloff(seam.geometry);
-    seam.position.set(0, 0, -plateD * 1.2);
-    sealed.add(seam);
-    fitToClip(seam, roomClip);
     const ring = new THREE.Mesh(
       track(new THREE.TorusGeometry(radius * 0.93, radius * 0.045, 6, 30)),
       amberDimMat
@@ -2217,32 +2347,18 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     ring.position.set(0, 0, plateD * 0.9);
     sealed.add(ring);
 
-    const iris = new THREE.Mesh(
-      track(new THREE.CircleGeometry(radius * 0.82, 30)),
-      transient(new THREE.MeshBasicMaterial({ color: hex, fog: false }))
-    );
+    const irisGeo = track(new THREE.CircleGeometry(radius * 0.99, 30));
+    paintPlane(irisGeo, new THREE.Color(hex).multiplyScalar(0.3), new THREE.Color(ramp.void), "y", 1.4);
+    const iris = new THREE.Mesh(irisGeo, gradientMat);
     iris.position.set(0, 0, -plateD * 0.2);
     open.add(iris);
-    const haloMat = haloMaterial(hex);
-    haloMat.opacity = Math.min(feel.passageSpillOpacity * 1.4, 1);
-    const halo = new THREE.Mesh(
-      track(new THREE.PlaneGeometry(Math.max(rect.w, 0.3), Math.max(rect.h, 0.3))),
-      haloMat
-    );
-    halo.position.set(0, 0, plateD * 1.4);
-    halo.renderOrder = 3;
-    open.add(halo);
-    fitToClip(halo, roomClip);
-    const pool = new THREE.Mesh(
-      track(new THREE.CircleGeometry(radius * 2.2, 24)),
-      spillMaterial(hex, feel.passageSpillOpacity * 0.9)
-    );
-    radialFalloff(pool.geometry);
+    const poolGeo = track(new THREE.PlaneGeometry(radius * 2.2, radius * 1.1, 8, 2));
+    paintPlane(poolGeo, new THREE.Color(0x000000), new THREE.Color(0xffffff), "y", 1.2);
+    const pool = new THREE.Mesh(poolGeo, spillMaterial(hex, feel.passageSpillOpacity * 0.4));
     pool.rotation.x = -Math.PI * 0.5;
-    pool.scale.set(1, 0.4, 1);
-    pool.position.set(0, -cy + rect.y + 0.02, 0.6);
+    pool.position.set(0, -cy + rect.y + 0.02, radius * 0.55);
     open.add(pool);
-    fitToClip(pool, roomClip);
+    if (passage === undefined) fitToClip(pool, roomClip);
 
     let gateId: string | null = null;
     for (const gate of room.gates) {
@@ -2592,7 +2708,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   function classifyOpening(door: Door, room: Room, walls: Rect[], slabs: Rect[]): Opening | null {
     const b = room.bounds;
     const warm = WARM_TARGETS[door.to] === true;
-    const tone: PassageTone = warm ? "warm" : PALE_TARGETS[door.to] === true ? "pale" : "ash";
+    const tone: PassageTone = warm ? "warm" : DIM_TARGETS[door.to] === true ? "dim" : "ash";
     let best: Opening | null = null;
     let bestScore = -Infinity;
     for (const wall of walls) {
@@ -2647,9 +2763,31 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   }
 
   function toneHex(tone: PassageTone): number {
-    if (tone === "warm") return ramp.amber;
-    if (tone === "pale") return PALE_SPILL;
-    return ramp.ash;
+    return tone === "ash" ? ramp.ash : ramp.amber;
+  }
+
+  function toneStrength(tone: PassageTone): number {
+    if (tone === "warm") return 1;
+    if (tone === "dim") return 0.6;
+    return 0.42;
+  }
+
+  function addRecessGradient(
+    cx: number,
+    baseY: number,
+    w: number,
+    h: number,
+    z: number,
+    hex: number,
+    opacity: number,
+    clip: Rect | null = null
+  ): THREE.Mesh {
+    const geometry = track(new THREE.PlaneGeometry(w, h, 2, 10));
+    paintPlane(geometry, new THREE.Color(0xffffff), new THREE.Color(0x000000), "y", 1.55);
+    const mesh = new THREE.Mesh(geometry, spillMaterial(hex, opacity));
+    mesh.position.set(cx, baseY + h * 0.5, z);
+    group.add(mesh);
+    return fitToClip(mesh, clip);
   }
 
   function addSidePassage(opening: Opening, feel: Feel, arched: boolean): void {
@@ -2663,24 +2801,21 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const cy = rect.y + rect.h * 0.5;
     const tone = opening.tone;
     const hex = toneHex(tone);
-    const glowHex = tone === "warm" ? ramp.amber : shadeOf(hex, 1.15);
+    const strength = toneStrength(tone);
+    const glowHex = tone === "ash" ? shadeOf(hex, 1.1) : ramp.amber;
     const interior = Math.max(feel.passageInteriorDepth, 0.2);
     const lift = Math.max(feel.passageFrameLift, 0);
     const backZ = -depth * 0.5 - interior;
     const revealLen = depth + interior;
     const revealZ = -interior * 0.5;
 
-    const nearC =
-      tone === "pale" ? new THREE.Color(roomFogHex).multiplyScalar(0.34) : new THREE.Color(ramp.void);
-    const farC =
-      tone === "pale"
-        ? new THREE.Color(roomFogHex).lerp(new THREE.Color(PALE_SPILL), 0.55)
-        : new THREE.Color(hex).multiplyScalar(tone === "warm" ? 0.7 : 0.42);
+    const nearC = new THREE.Color(ramp.void);
+    const dim = tone === "dim";
+    const farC = dim ? new THREE.Color(ramp.charcoal) : new THREE.Color(hex).multiplyScalar(0.26 * strength);
 
     const sealed = sealedOpenings.has(opening);
-    const back = track(new THREE.PlaneGeometry(rect.w + 0.06, rect.h, 8, 2));
-    paintPlane(back, nearC, farC, "x", 1.4);
-    if (!right) back.scale(-1, 1, 1);
+    const back = track(new THREE.PlaneGeometry(rect.w + 0.06, rect.h, 2, 10));
+    paintPlane(back, farC, nearC, "y", 1.5);
     const backMat = sealed
       ? transient(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }))
       : gradientMat;
@@ -2696,6 +2831,13 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     floorMesh.rotation.x = -Math.PI * 0.5;
     floorMesh.position.set(cx, rect.y + 0.02, revealZ);
     group.add(floorMesh);
+
+    const reveal = track(new THREE.PlaneGeometry(revealLen, rect.h, 2, 10));
+    paintPlane(reveal, farC.clone().multiplyScalar(0.55), nearC, "y", 1.3);
+    const revealMesh = new THREE.Mesh(reveal, transient(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide })));
+    revealMesh.rotation.y = Math.PI * 0.5;
+    revealMesh.position.set(innerX + dir * 0.01, cy, revealZ);
+    group.add(revealMesh);
 
     const ceiling = track(new THREE.PlaneGeometry(rect.w, revealLen, 8, 2));
     paintPlane(ceiling, new THREE.Color(ramp.void), nearC.clone().lerp(farC, 0.35), "x", 1.5);
@@ -2741,19 +2883,36 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     outlineOverride = null;
 
     const recessClip: Rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
-    const spill = addFloorSpill(innerX, rect.y, Math.min(rect.w * 2.1, depth - 0.1), feel.passageSpillLength, -dir, glowHex, feel.passageSpillOpacity * (tone === "ash" ? 0.6 : 0.9), roomClip);
-    const wallGlow = addWallGlow(cx - dir * 0.2, cy, rect.w * 1.6, rect.h * 1.15, backZ + 0.3, glowHex, feel.passageSpillOpacity * (tone === "warm" ? 0.9 : tone === "pale" ? 1.5 : 0.9), recessClip);
-    addWallGlow(innerX - dir * 0.3, rect.y + rect.h * 0.62, rect.w * 1.1, rect.h * 0.9, depth * 0.5 + lift * 2 + 0.06, glowHex, feel.passageSpillOpacity * 0.32, roomClip);
-    addJambLamp(opening, feel);
+    const spill = addFloorSpill(
+      innerX,
+      rect.y,
+      Math.min(rect.w * 1.5, depth - 0.1),
+      feel.passageSpillLength * 0.42,
+      -dir,
+      glowHex,
+      feel.passageSpillOpacity * 0.5 * strength,
+      roomClip
+    );
+    const wallGlow = addRecessGradient(
+      cx - dir * 0.1,
+      rect.y,
+      rect.w * 0.96,
+      rect.h * (dim ? 0.2 : 0.72),
+      backZ + 0.18,
+      glowHex,
+      feel.passageSpillOpacity * (dim ? 0.3 : 0.62) * strength,
+      recessClip
+    );
+    addJambLamp(opening, feel, veil);
     let passageLight: THREE.PointLight | null = null;
     if (feel.passageLightIntensity > 0 && tone !== "ash") {
       passageLight = addFlameLight(
         hex,
-        feel.passageLightIntensity * (tone === "warm" ? 1 : 0.55),
-        feel.passageLightDistance,
-        innerX - dir * 0.2,
-        cy,
-        0.4,
+        feel.passageLightIntensity * 0.5 * strength,
+        feel.passageLightDistance * 0.5,
+        innerX - dir * 0.75,
+        rect.y + 0.3,
+        0.1,
         LIGHT_PRIORITY_KEY
       );
     }
@@ -2777,30 +2936,98 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     }
   }
 
-  function addJambLamp(opening: Opening, feel: Feel): void {
+  function addOpenPassage(opening: Opening, feel: Feel): void {
+    const rect = opening.rect;
+    const right = opening.side === "right";
+    const dir = right ? 1 : -1;
+    const innerX = right ? rect.x : rect.x + rect.w;
+    const cx = rect.x + rect.w * 0.5;
+    const depth = feel.solidDepth;
+    const lift = Math.max(feel.passageFrameLift, 0);
+    const frameD = depth + lift * 2;
+    const veil = veilByOpening.get(opening);
+    const frameIron = veil === undefined ? ironMat : veil.stone;
+    const frameDark = veil === undefined ? ironDarkMat : veil.stoneDark;
+    const revealMat = veil === undefined ? faceMat : veil.stoneLit;
+    const rivetMat = veil === undefined ? ironDarkMat : veil.iron;
+    if (veil !== undefined) outlineOverride = veil.outline;
+
+    const jambW = 0.3;
+    const jambX = innerX + dir * jambW * 0.5;
+    addBox(jambW, rect.h, frameD, jambX, rect.y + rect.h * 0.5, 0, revealMat, group, true);
+    addBox(0.1, rect.h, frameD, innerX + dir * (jambW + 0.05), rect.y + rect.h * 0.5, 0, frameDark, group, true);
+    const soffitH = 0.18;
+    addBox(rect.w + 0.02, soffitH, frameD, cx, rect.y + rect.h - soffitH * 0.5, 0, frameIron, group, true);
+    addBox(rect.w + 0.02, 0.07, frameD, cx, rect.y + 0.035, 0, frameIron, group, true);
+    addBox(rect.w + 0.02, 0.04, frameD - 0.2, cx, rect.y + 0.09, 0, frameDark, group);
+    outlineOverride = null;
+    const studs = Math.max(2, Math.round(rect.h / PLATE_PITCH_Y));
+    for (let i = 0; i < studs; i++) {
+      const sy = rect.y + ((i + 0.5) / studs) * rect.h;
+      addBox(0.06, 0.06, 0.06, jambX, sy, frameD * 0.5 + 0.03, rivetMat, group);
+    }
+
+    const spill = addFloorSpill(
+      innerX,
+      rect.y,
+      Math.min(rect.w * 1.5, depth - 0.1),
+      feel.passageSpillLength * 0.3,
+      -dir,
+      roomFogHex,
+      feel.passageSpillOpacity * 0.3,
+      roomClip
+    );
+    addJambLamp(opening, feel, veil);
+    const light =
+      feel.passageLightIntensity > 0
+        ? addFlameLight(
+            ramp.amber,
+            feel.passageLightIntensity * 0.3,
+            feel.passageLightDistance * 0.4,
+            innerX - dir * 0.6,
+            rect.y + rect.h * 0.7,
+            depth * 0.5 + 0.4,
+            LIGHT_PRIORITY_KEY
+          )
+        : null;
+    if (veil !== undefined) {
+      const spillMat = spill.material as THREE.MeshBasicMaterial;
+      veil.show.push({ material: spillMat, base: spillMat.opacity });
+      spillMat.opacity = 0;
+      spillMat.visible = false;
+      if (light !== null) {
+        veil.lights.push({ light, intensity: light.intensity });
+        light.intensity = 0;
+      }
+    }
+  }
+
+  function addJambLamp(opening: Opening, feel: Feel, veil: Veil | undefined): void {
     const rect = opening.rect;
     const right = opening.side === "right";
     const dir = right ? 1 : -1;
     const innerX = right ? rect.x : rect.x + rect.w;
     const depth = feel.solidDepth;
-    const warm = opening.tone !== "pale";
-    const hex = warm ? ramp.amber : PALE_SPILL;
+    const hex = ramp.amber;
     const postX = innerX - dir * 0.52;
     const headY = rect.y + Math.min(rect.h * 0.78, rect.h - 0.4);
     const front = depth * 0.5 + 0.12;
+    const iron = veil === undefined ? ironDarkMat : veil.iron;
+    if (veil !== undefined) outlineOverride = veil.outline;
 
-    addBox(0.1, 0.34, 0.12, postX, headY + 0.28, front, ironDarkMat, group, true);
-    addBox(0.26, 0.09, 0.26, postX, headY + 0.1, front, ironDarkMat, group, true);
+    addBox(0.1, 0.34, 0.12, postX, headY + 0.28, front, iron, group, true);
+    addBox(0.26, 0.09, 0.26, postX, headY + 0.1, front, iron, group, true);
     const glassMat = transient(new THREE.MeshBasicMaterial({ color: hex, fog: false }));
     addBox(0.2, 0.26, 0.2, postX, headY - 0.06, front, glassMat, group).layers.set(ACTOR_LAYER);
-    addBox(0.26, 0.07, 0.26, postX, headY - 0.22, front, ironDarkMat, group, true);
-    addOrb(postX, headY - 0.06, front + 0.1, JAMB_ORB_RADIUS, hex, feel.lampHaloOpacity);
+    addBox(0.26, 0.07, 0.26, postX, headY - 0.22, front, iron, group, true);
+    outlineOverride = null;
+    const orb = addOrb(postX, headY - 0.06, front + 0.1, JAMB_ORB_RADIUS, hex, feel.lampHaloOpacity * 0.8);
 
     const beadMat = transient(
       new THREE.MeshBasicMaterial({
         color: ramp.porcelain,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.2,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         fog: false
@@ -2808,7 +3035,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     );
     const bead = addBox(0.07, rect.h - 0.12, 0.07, innerX - dir * 0.035, rect.y + rect.h * 0.5, front - 0.02, beadMat, group);
     bead.renderOrder = 2;
-    addPoolSpill(postX, rect.y, 1.9, hex, feel.passageSpillOpacity * 0.55, roomClip);
+    const pool = addPoolSpill(postX, rect.y, 1.05, hex, feel.passageSpillOpacity * 0.3, roomClip);
     flames.push({
       material: glassMat,
       base: new THREE.Color(hex),
@@ -2818,7 +3045,20 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       amount: 0.1,
       furnace: false
     });
+    if (veil === undefined) return;
+    const parts: THREE.Material[] = [
+      fading(glassMat, 0),
+      orb.material as THREE.Material,
+      beadMat,
+      pool.material as THREE.Material
+    ];
+    for (const material of parts) {
+      veil.show.push({ material, base: material === glassMat ? 1 : material.opacity });
+      material.opacity = 0;
+      material.visible = false;
+    }
   }
+
 
   function addVerticalPassage(opening: Opening, room: Room, feel: Feel): void {
     const rect = opening.rect;
@@ -2827,40 +3067,65 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const cx = rect.x + rect.w * 0.5;
     const cy = rect.y + rect.h * 0.5;
     const hex = toneHex(opening.tone);
-    const glowHex = opening.tone === "warm" ? ramp.amber : shadeOf(hex, 1.15);
+    const lit = new THREE.Color(hex).multiplyScalar(0.18 * toneStrength(opening.tone));
+    const dark = new THREE.Color(ramp.void);
     const back = track(new THREE.PlaneGeometry(rect.w, rect.h, 2, 8));
-    paintPlane(back, new THREE.Color(ramp.void), new THREE.Color(hex).multiplyScalar(0.8), "y", 1.3);
-    if (!up) back.scale(1, -1, 1);
+    paintPlane(back, up ? dark : lit, up ? lit : dark, "y", 1.3);
     const backMesh = new THREE.Mesh(back, gradientMat);
     backMesh.position.set(cx, cy, -depth * 0.5 + 0.03);
     group.add(backMesh);
-    const jambW = 0.4;
-    addBox(jambW, rect.h + 0.1, depth + 0.16, rect.x - jambW * 0.5, cy, 0, stoneMat, group, true);
-    addBox(jambW, rect.h + 0.1, depth + 0.16, rect.x + rect.w + jambW * 0.5, cy, 0, stoneMat, group, true);
-    const edgeY = up ? rect.y : rect.y + rect.h;
-    addBox(rect.w + jambW * 2.4, 0.24, depth + 0.2, cx, edgeY + (up ? -0.12 : 0.12), 0, stoneLitMat, group, true);
-    const ladderTop = up ? rect.y + rect.h : rect.y + rect.h;
+
+    const rimY = rect.y + rect.h;
+    const trimW = 0.14;
+    for (const tz of [depth * 0.5 - 0.06, -depth * 0.5 + 0.1]) {
+      addBox(trimW, rect.h, 0.12, rect.x - trimW * 0.5, cy, tz, ironDarkMat, group, true);
+      addBox(trimW, rect.h, 0.12, rect.x + rect.w + trimW * 0.5, cy, tz, ironDarkMat, group, true);
+    }
+    const lipH = 0.07;
+    const lipY = rimY - lipH * 0.5 + RIM_LIFT;
+    addBox(rect.w, lipH, 0.08, cx, lipY, -depth * 0.5 + 0.08, rimMat, group);
+    addBox(0.08, lipH, depth, rect.x - 0.02, lipY, 0, rimMat, group);
+    addBox(0.08, lipH, depth, rect.x + rect.w + 0.02, lipY, 0, rimMat, group);
+    const stripH = Math.min(rect.h, 0.5);
+    addBox(0.05, stripH, 0.04, rect.x - 0.025, rimY - stripH * 0.5, depth * 0.5 + 0.05, rimMat, group);
+    addBox(0.05, stripH, 0.04, rect.x + rect.w + 0.025, rimY - stripH * 0.5, depth * 0.5 + 0.05, rimMat, group);
+
+    const ladderTop = rimY - 0.1;
     const ladderBottom = up ? findFloorY(room, cx, rect.y) : rect.y;
     const ladderH = Math.max(ladderTop - ladderBottom, 0.5);
-    const ladderZ = -depth * 0.5 + 0.2;
+    const ladderZ = -depth * 0.5 + 0.38;
     const rungs = Math.max(2, Math.round(ladderH / 0.42));
+    let topRung = ladderBottom;
     for (let i = 0; i < rungs; i++) {
-      addBox(rect.w * 0.58, 0.06, 0.06, cx, ladderBottom + ((i + 0.5) / rungs) * ladderH, ladderZ, ironMat, group);
+      const ry = ladderBottom + ((i + 0.5) / rungs) * ladderH;
+      addBox(rect.w * 0.58, 0.06, 0.06, cx, ry, ladderZ, ironMat, group);
+      topRung = ry;
     }
     addBox(0.07, ladderH, 0.07, cx - rect.w * 0.3, ladderBottom + ladderH * 0.5, ladderZ, ironDarkMat, group);
     addBox(0.07, ladderH, 0.07, cx + rect.w * 0.3, ladderBottom + ladderH * 0.5, ladderZ, ironDarkMat, group);
-    if (up) {
-      const shaftH = Math.max(rect.y - ladderBottom, 0.4);
-      const shaft = track(new THREE.PlaneGeometry(rect.w * 1.5, shaftH, 4, 8));
-      paintPlane(shaft, new THREE.Color(0x000000), new THREE.Color(0xffffff), "y", 1.4);
-      const shaftMesh = new THREE.Mesh(shaft, spillMaterial(glowHex, feel.passageSpillOpacity * 0.55));
-      shaftMesh.position.set(cx, ladderBottom + shaftH * 0.5, -depth * 0.5 + 0.5);
-      group.add(shaftMesh);
-      fitToClip(shaftMesh, roomClip);
-      addPoolSpill(cx, ladderBottom, rect.w * 1.6, glowHex, feel.passageSpillOpacity * 0.9, roomClip);
-      addWallGlow(cx, rect.y + 0.2, rect.w * 2.2, 1.6, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * 0.7, roomClip);
-    } else {
-      addWallGlow(cx, rect.y + rect.h - 0.3, rect.w * 2.0, 1.4, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * 0.5, roomClip);
+    addOrb(cx, topRung, ladderZ + 0.12, 0.3, ramp.amber, feel.lampHaloOpacity * 0.9);
+  }
+
+  function addShelfMass(mass: Rect, depth: number, z: number, feel: Feel): void {
+    const slabT = Math.min(0.34, mass.h);
+    const top = mass.y + mass.h;
+    const slab: Rect = { x: mass.x, y: top - slabT, w: mass.w, h: slabT };
+    addRect(slab, depth, z, stoneMat, group, true);
+    addRim(slab, depth, z, group, feel);
+    const beamH = Math.min(0.2, mass.h - slabT);
+    if (beamH <= 0.04) return;
+    const cx = mass.x + mass.w * 0.5;
+    const front = z + depth * 0.5 - 0.14;
+    const rear = z - depth * 0.5 + 0.14;
+    addBox(mass.w, beamH, 0.22, cx, mass.y + beamH * 0.5, front, ironDarkMat, group, true);
+    addBox(mass.w, beamH, 0.22, cx, mass.y + beamH * 0.5, rear, ironDarkMat, group, true);
+    const gap = mass.h - slabT - beamH;
+    if (gap <= 0.05) return;
+    const count = Math.max(2, Math.round(mass.w / 0.5) + 1);
+    for (let i = 0; i < count; i++) {
+      const px = mass.x + 0.12 + ((mass.w - 0.24) * i) / (count - 1);
+      addBox(0.16, gap, 0.24, px, mass.y + beamH + gap * 0.5, front, stoneDarkMat, group, true);
+      addBox(0.3, 0.12, 0.3, px, top - slabT - 0.06, front, stoneMat, group, true);
     }
   }
 
@@ -2874,6 +3139,10 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     addBox(0.4, rect.h, depth, rect.x + rect.w + 0.2, cy, 0, stoneMat, group, true);
     addBox(rect.w + 0.8, 0.5, depth, cx, rect.y + rect.h + 0.25, 0, stoneMat, group, true);
     addFloorSpill(cx, rect.y, rect.w * 1.6, feel.passageSpillLength * 0.6, 1, ramp.ash, feel.passageSpillOpacity * 0.6, roomClip);
+  }
+
+  function archedCut(cut: Opening): boolean {
+    return !paleRoom && (cut.door.to === "belfry" || cut.door.to === "landing");
   }
 
   function addBoundaryWall(wall: Rect, openings: Opening[], room: Room, feel: Feel): void {
@@ -2905,7 +3174,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       const sorted = cuts.slice().sort((p, q) => p.rect.y - q.rect.y);
       for (const cut of sorted) {
         const gapTop = cut.rect.y + cut.rect.h;
-        const archRise = cut.door.to === "belfry" || cut.door.to === "landing" ? cut.rect.w * 0.5 : 0;
+        const archRise = archedCut(cut) ? cut.rect.w * 0.5 : 0;
         if (cut.rect.y > cursor) pieces.push({ x: drawn.x, y: cursor, w: drawn.w, h: cut.rect.y - cursor });
         cursor = gapTop + archRise;
       }
@@ -2929,7 +3198,9 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
           w: wall.w,
           h: Math.min(piece.y + piece.h, b.y + b.h + 1) - Math.max(piece.y, b.y - 1)
         };
-        if (visible.h > 0.4) addCourses(visible, depth, 0, group, feel, piece.y + wall.x);
+        if (visible.h <= 0.4) continue;
+        if (ironRoom) addPlateGrid(visible, b.y, depth * 0.5 + 0.006, group, voidMat, ironDarkMat, -1);
+        else addCourses(visible, depth, 0, group, feel, piece.y + wall.x);
       }
     }
 
@@ -2986,7 +3257,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       let cursor = b.y;
       const sorted = cuts.slice().sort((p, q) => p.rect.y - q.rect.y);
       for (const cut of sorted) {
-        const archRise = cut.door.to === "belfry" || cut.door.to === "landing" ? cut.rect.w * 0.5 + 0.9 : 0.9;
+        const archRise = paleRoom ? 0 : archedCut(cut) ? cut.rect.w * 0.5 + PASSAGE_HEAD_GAP : PASSAGE_HEAD_GAP;
         if (cut.rect.y - 0.02 > cursor) spans.push({ x: innerX, y: cursor, w: pilasterW, h: cut.rect.y - cursor });
         cursor = cut.rect.y + cut.rect.h + archRise;
       }
@@ -2998,57 +3269,75 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       }
       for (const cut of cuts) {
         if (cut.side !== "left" && cut.side !== "right") continue;
-        const arched = cut.door.to === "belfry" || cut.door.to === "landing";
-        addSidePassage(cut, feel, arched);
+        if (paleRoom) addOpenPassage(cut, feel);
+        else addSidePassage(cut, feel, archedCut(cut));
       }
     }
   }
 
-  function addGate(rect: Rect, feel: Feel, warm: boolean): THREE.Group {
+  function addGate(rect: Rect, feel: Feel, warm: boolean, opening: Opening | undefined): THREE.Group {
     const holder = new THREE.Group();
-    holder.position.set(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5, 0);
     group.add(holder);
-    const depth = Math.max(feel.gateDepth, 0.3);
+    const side = opening !== undefined && (opening.side === "left" || opening.side === "right");
+    let w = Math.max(rect.w, 0.3);
+    const h = rect.h;
+    const thick = Math.min(Math.max(feel.gateDepth, 0.3) * 0.14, 0.18);
+    let frontX = 0;
+    if (side && opening !== undefined) {
+      const o = opening.rect;
+      const right = opening.side === "right";
+      const innerX = right ? o.x : o.x + o.w;
+      const dir = right ? 1 : -1;
+      w = Math.max(feel.solidDepth - 0.04, 0.3);
+      frontX = dir * w * 0.5;
+      holder.position.set(innerX - dir * (thick * 0.5 + 0.03), rect.y + h * 0.5, 0);
+      holder.rotation.y = -dir * Math.PI * 0.5;
+    } else {
+      holder.position.set(rect.x + rect.w * 0.5, rect.y + h * 0.5, 0);
+    }
     const plateDarkMat = warm
       ? registerDoorPlate(transient(look.litMaterial("chain", { shade: 0.62 })), 0.4)
       : ironDarkMat;
     const plateMat = warm ? registerDoorPlate(transient(look.litMaterial("chain")), 1) : ironMat;
-    if (warm) {
-      const glowGeometry = track(new THREE.CircleGeometry(1, 24));
-      radialFalloff(glowGeometry);
-      const glow = new THREE.Mesh(glowGeometry, spillMaterial(ramp.amber, feel.passageSpillOpacity * 1.1));
-      glow.scale.set(rect.w * 1.4, rect.h * 0.62, 1);
-      glow.position.set(0, -rect.h * 0.08, -depth * 0.5 - 0.12);
-      holder.add(glow);
-      fitToClip(glow, roomClip);
-      const inward = roomClip === null || rect.x + rect.w * 0.5 > roomClip.x + roomClip.w * 0.5 ? -1 : 1;
-      const floorGlow = new THREE.Mesh(glowGeometry, spillMaterial(ramp.amber, feel.passageSpillOpacity * 0.7));
-      floorGlow.rotation.x = -Math.PI * 0.5;
-      floorGlow.scale.set(rect.w * 2.6, feel.solidDepth * 0.42, 1);
-      floorGlow.position.set(inward * rect.w * 1.6, -rect.h * 0.5 + 0.012, 0);
-      holder.add(floorGlow);
-      fitToClip(floorGlow, roomClip);
-      registerDoorGlow(floorGlow, roomClip, true);
+    const face = thick * 0.5;
+    addBox(w, h, thick, 0, 0, 0, plateDarkMat, holder, true);
+    const seams = Math.max(1, Math.round(w / 0.5)) + 1;
+    for (let i = 1; i < seams; i++) {
+      addBox(0.025, h - 0.1, 0.01, -w * 0.5 + (i / seams) * w, 0, face + 0.005, voidMat, holder);
     }
-    const frameW = Math.max(rect.w, 0.3);
-    const frameT = 0.14;
-    addBox(frameW, frameT, depth, 0, rect.h * 0.5 - frameT * 0.5, 0, plateDarkMat, holder, true);
-    addBox(frameW, frameT, depth, 0, -rect.h * 0.5 + frameT * 0.5, 0, plateDarkMat, holder, true);
-    addBox(frameT, rect.h, depth, -frameW * 0.5 + frameT * 0.5, 0, 0, plateDarkMat, holder, true);
-    addBox(frameT, rect.h, depth, frameW * 0.5 - frameT * 0.5, 0, 0, plateDarkMat, holder, true);
-    const bars = Math.max(3, Math.round(depth / 0.28));
-    for (let i = 0; i < bars; i++) {
-      const bz = -depth * 0.5 + ((i + 0.5) / bars) * depth;
-      addBox(frameW * 0.86, 0.09, 0.09, 0, 0, bz, plateMat, holder, true);
-      addBox(0.09, rect.h - frameT * 2, 0.09, 0, 0, bz, plateMat, holder, true);
+    const strapH = 0.16;
+    for (const sy of [h * 0.36, 0, -h * 0.36]) {
+      addBox(w, strapH, 0.05, 0, sy, face + 0.025, plateMat, holder, true);
+      const rivets = Math.max(2, Math.round(w / 0.32));
+      for (let i = 0; i < rivets; i++) {
+        const rx = -w * 0.5 + 0.1 + ((w - 0.2) * i) / (rivets - 1);
+        addBox(0.05, 0.05, 0.04, rx, sy, face + 0.07, plateDarkMat, holder);
+      }
     }
-    addBox(frameW * 0.92, 0.12, depth * 1.04, 0, rect.h * 0.22, 0, plateDarkMat, holder, true);
-    addBox(frameW * 0.92, 0.12, depth * 1.04, 0, -rect.h * 0.22, 0, plateDarkMat, holder, true);
-    const plate = addBox(frameW * 0.9, 0.5, 0.16, 0, -rect.h * 0.02, depth * 0.5 + 0.06, plateMat, holder, true);
-    plate.renderOrder = 1;
-    addBox(0.08, 0.14, 0.06, 0, -rect.h * 0.02 - 0.02, depth * 0.5 + 0.16, voidMat, holder);
-    addBox(0.14, 0.06, 0.06, 0, -rect.h * 0.02 + 0.06, depth * 0.5 + 0.16, voidMat, holder);
-    addRivets(0, -rect.h * 0.02, frameW * 0.86, 0.46, depth * 0.5 + 0.16, holder, plateDarkMat);
+    addRivets(0, 0, w, h, face + 0.02, holder, plateMat);
+    const lockW = Math.min(w * 0.46, 0.5);
+    const lockY = -h * 0.12;
+    const lock = addBox(lockW, 0.5, 0.06, 0, lockY, face + 0.08, plateMat, holder, true);
+    lock.renderOrder = 1;
+    addRivets(0, lockY, lockW, 0.5, face + 0.13, holder, plateDarkMat);
+    addBox(0.07, 0.13, 0.02, 0, lockY - 0.04, face + 0.12, voidMat, holder);
+    addBox(0.12, 0.06, 0.02, 0, lockY + 0.05, face + 0.12, voidMat, holder);
+    if (frontX !== 0) {
+      const edgeX = frontX - Math.sign(frontX) * 0.04;
+      addBox(0.08, h, thick + 0.06, edgeX, 0, 0.01, plateMat, holder, true);
+      const edgeMat = transient(
+        new THREE.MeshBasicMaterial({
+          color: ramp.amber,
+          transparent: true,
+          opacity: 0.32,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          fog: false
+        })
+      );
+      const edge = addBox(0.04, h - 0.12, thick + 0.1, frontX + Math.sign(frontX) * 0.005, 0, 0.01, edgeMat, holder);
+      edge.renderOrder = 2;
+    }
     return holder;
   }
 
@@ -3137,6 +3426,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       }
       currentOpenings = openings;
       currentRoom = room;
+      paleRoom = pale > 0;
+      ironRoom = room.decor.some((d) => d.kind === "wall" && (d.intensity ?? 0) >= 1);
 
       for (const gate of room.gates) {
         const beyond = openings.find((o) => rectsTouch(o.rect, gate.rect, 1.4));
@@ -3181,8 +3472,9 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       for (const door of loose) addFreePortal(door, feel);
 
       for (const gate of room.gates) {
+        if (shutters.some((s) => s.id === gate.id)) continue;
         const beyond = openings.find((o) => rectsTouch(o.rect, gate.rect, 1.4));
-        gates.push({ id: gate.id, mesh: addGate(gate.rect, feel, beyond !== undefined && beyond.warm) });
+        gates.push({ id: gate.id, mesh: addGate(gate.rect, feel, beyond !== undefined && beyond.warm, beyond) });
       }
       for (const breakable of room.breakables) {
         breakables.push({ id: breakable.id, mesh: addBrickedArch(breakable.rect, feel) });
@@ -3220,8 +3512,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       for (const entry of doorPanels) {
         entry.material.color
           .copy(entry.base)
-          .lerp(dawnColor, dawnAmount * 0.4)
-          .multiplyScalar(1 + dawnAmount * 0.9);
+          .lerp(dawnColor, dawnAmount * 0.08)
+          .multiplyScalar(1 + dawnAmount * 0.25);
       }
       for (const entry of doorLights) {
         entry.light.intensity = entry.intensity * Math.min(doorGlow, DOOR_LIGHT_DAWN_CAP);
@@ -3249,10 +3541,12 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
           for (const part of veil.hide) {
             part.material.opacity = part.base * hidden;
             part.material.visible = part.material.opacity > 0.004;
+            part.material.depthWrite = part.material.opacity >= 0.999;
           }
           for (const part of veil.show) {
             part.material.opacity = part.base * shown;
             part.material.visible = part.material.opacity > 0.004;
+            part.material.depthWrite = part.base >= 0.999 && part.material.opacity >= 0.999;
           }
           for (const entry of veil.lights) entry.light.intensity = entry.intensity * shown;
         }

@@ -1,6 +1,7 @@
 import type { Tuning } from "../tuning";
 import type { GameEvent, GameState } from "../game/types";
 import {
+  BOSS_DEFEATED,
   BOSS_INTRO,
   CHECKPOINT,
   DEATH,
@@ -103,10 +104,13 @@ export function createBanners(root: HTMLElement): Banners {
       const banners = feel.bannerMs / 1000;
       if (event.kind === "pickup") show(state, pickupText(state, event), banners);
       else if (event.kind === "checkpoint") show(state, CHECKPOINT, banners);
-      else if (event.kind === "gateOpen") show(state, GATE_OPEN, banners);
+      else if (event.kind === "gateOpen") {
+        if (!state.progress.bossDefeated) show(state, GATE_OPEN, banners);
+      }
       else if (event.kind === "breakableBroken") show(state, WALL_BROKEN, banners);
       else if (event.kind === "death") showLocked(state, DEATH, banners);
       else if (event.kind === "victory") showLocked(state, VICTORY, banners);
+      else if (event.kind === "bossDeath") showLocked(state, BOSS_DEFEATED, feel.bossIntroMs / 1000);
       else if (event.kind === "roomEnter") {
         const boss = state.boss;
         if (!bossIntroShown && boss !== null && boss.alive) {
@@ -139,7 +143,7 @@ export function createBanners(root: HTMLElement): Banners {
         banner.classList.toggle("show", showBanner);
       }
 
-      const intro = showBanner && !dead && !won && value === BOSS_INTRO;
+      const intro = showBanner && !dead && !won && (value === BOSS_INTRO || value === BOSS_DEFEATED);
       const tone = toneFor(dead, won, intro);
       if (tone !== bannerTone) {
         bannerTone = tone;

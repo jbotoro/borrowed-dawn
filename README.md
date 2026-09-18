@@ -95,4 +95,3 @@ Node 24 (see `.tool-versions`).
 - The game has been played end to end and the gates were checked by hand, but it has only ever been verified at 720p-class sizes on one machine. High-DPI behaviour is unknown.
 - In the two level 2 rooms, doors sit close to the screen edge and can read dim on entry. The levers for it (camera padding, vignette) were identified and not pulled.
 - No agent ever heard the audio. The music beds and SFX are procedural WebAudio verified by reading code and by one human listening pass; the per-item listening checklist was never filled in.
-- The repository folder is still named `one-more-run`, the working title. The package, the Vite base, the storage key, and the deployed URL are all `borrowed-dawn`.
