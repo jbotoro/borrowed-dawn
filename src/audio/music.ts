@@ -1,7 +1,7 @@
 import type { Synth } from "./synth";
 import { lfo, metal, noiseBurst, stopSource, tone } from "./synth";
 
-export type BedId = "cinder" | "bellkeeper" | "dawn";
+export type BedId = "cinder" | "bellkeeper" | "dawn" | "reserve";
 
 export interface BedConfig {
   readonly fightPulseGain: number;
@@ -41,7 +41,33 @@ const DAWN_CHORDS: number[][] = [
 ];
 
 const DAWN_RISE = [146.83, 174.61, 220.0, 261.63, 329.63, 391.99];
-const DAWN_CUTOFF_SCALE = 1.9;
+
+const RESERVE_CHORDS: number[][] = [
+  [130.81, 196.0, 261.63],
+  [146.83, 220.0, 293.66],
+  [123.47, 185.0, 246.94],
+  [110.0, 164.81, 220.0]
+];
+
+const RESERVE_FALL = [391.99, 329.63, 293.66, 349.23, 293.66, 261.63];
+const RESERVE_RIM = 1567.98;
+const RESERVE_SWELL = 3.6;
+const RESERVE_HOLD = 4.2;
+const RESERVE_RELEASE = 5.0;
+
+interface BedProfile {
+  readonly cutoffScale: number;
+  readonly organGain: number;
+  readonly airFreq: number;
+  readonly airGain: number;
+}
+
+const PROFILES: Record<BedId, BedProfile> = {
+  cinder: { cutoffScale: 1, organGain: 0.55, airFreq: 380, airGain: 0.05 },
+  bellkeeper: { cutoffScale: 1, organGain: 0.55, airFreq: 380, airGain: 0.05 },
+  dawn: { cutoffScale: 1.9, organGain: 0.7, airFreq: 760, airGain: 0.035 },
+  reserve: { cutoffScale: 2.4, organGain: 0.42, airFreq: 1150, airGain: 0.02 }
+};
 
 const STRIKE_ROOT = 73.42;
 const STRIKE_RATIOS = [1, 2.0, 3.01, 4.72];
@@ -74,7 +100,9 @@ function pickNumber(table: number[], index: number, fallback: number): number {
 export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConfig): Bed {
   const ctx = synth.ctx;
   const dawn = id === "dawn";
-  const baseCutoff = dawn ? ORGAN_CUTOFF * DAWN_CUTOFF_SCALE : ORGAN_CUTOFF;
+  const reserve = id === "reserve";
+  const profile = PROFILES[id];
+  const baseCutoff = ORGAN_CUTOFF * profile.cutoffScale;
 
   const output = ctx.createGain();
   output.gain.value = 0.0001;
@@ -91,7 +119,7 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConf
   organFilter.connect(output);
 
   const organBus = ctx.createGain();
-  organBus.gain.value = dawn ? 0.7 : 0.55;
+  organBus.gain.value = profile.organGain;
   organBus.connect(organFilter);
 
   const tollBus = ctx.createGain();
@@ -210,6 +238,70 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConf
     }
   }
 
+  function glass(at: number, index: number): void {
+    const chord = pick(RESERVE_CHORDS, index);
+    let voice = 0;
+    for (const freq of chord) {
+      tone(synth, organBus, at, {
+        type: "sine",
+        freq,
+        gain: 0.055,
+        attack: RESERVE_SWELL,
+        hold: RESERVE_HOLD,
+        decay: RESERVE_RELEASE,
+        curve: "linear"
+      });
+      tone(synth, organBus, at, {
+        type: "triangle",
+        freq: freq * 2,
+        detune: voice === 0 ? -6 : 5,
+        gain: 0.024,
+        attack: RESERVE_SWELL + 0.8,
+        hold: RESERVE_HOLD,
+        decay: RESERVE_RELEASE,
+        curve: "linear"
+      });
+      if (voice === 0) {
+        tone(synth, output, at, {
+          type: "sine",
+          freq: freq * 8,
+          gain: 0.006,
+          attack: RESERVE_SWELL * 0.7,
+          hold: RESERVE_HOLD * 0.6,
+          decay: RESERVE_RELEASE,
+          curve: "linear"
+        });
+      }
+      voice += 1;
+    }
+  }
+
+  function fall(at: number, index: number): void {
+    const offset = (index % 2) * 3;
+    for (let i = 0; i < 3; i++) {
+      const freq = pickNumber(RESERVE_FALL, offset + i, 293.66);
+      const when = at + i * BEAT * 2;
+      tone(synth, organBus, when, {
+        type: "triangle",
+        freq,
+        gain: 0.038,
+        attack: 0.45,
+        hold: 0.5,
+        decay: 2.2,
+        curve: "linear"
+      });
+      tone(synth, output, when, {
+        type: "sine",
+        freq: freq * 2,
+        gain: 0.012,
+        attack: 0.35,
+        hold: 0.4,
+        decay: 1.8,
+        curve: "linear"
+      });
+    }
+  }
+
   function toll(at: number, index: number, decay: number, gain: number): void {
     const root = pickNumber(TOLL_ROOTS, index, 110);
     metal(synth, tollBus, at, root, TOLL_RATIOS, {
@@ -289,10 +381,10 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConf
     const source = synth.noiseSource();
     const band = ctx.createBiquadFilter();
     band.type = "bandpass";
-    band.frequency.value = dawn ? 760 : 380;
+    band.frequency.value = profile.airFreq;
     band.Q.value = 0.9;
     const level = ctx.createGain();
-    level.gain.value = dawn ? 0.035 : 0.05;
+    level.gain.value = profile.airGain;
     source.connect(band);
     band.connect(level);
     level.connect(output);
@@ -300,6 +392,36 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConf
     synth.track(source);
     continuous.push(source);
     continuous.push(lfo(synth, band.frequency, at, 0.05, 140));
+  }
+
+  function startRim(at: number): void {
+    for (const detune of [-4, 6]) {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = RESERVE_RIM;
+      osc.detune.value = detune;
+      const level = ctx.createGain();
+      level.gain.value = 0.007;
+      osc.connect(level);
+      level.connect(output);
+      osc.start(at);
+      synth.track(osc);
+      continuous.push(osc);
+      continuous.push(lfo(synth, level.gain, at, 0.043, 0.005));
+    }
+
+    const upper = ctx.createOscillator();
+    upper.type = "sine";
+    upper.frequency.value = RESERVE_RIM * 1.5;
+    const upperLevel = ctx.createGain();
+    upperLevel.gain.value = 0.004;
+    upper.connect(upperLevel);
+    upperLevel.connect(output);
+    upper.start(at);
+    synth.track(upper);
+    continuous.push(upper);
+    continuous.push(lfo(synth, upperLevel.gain, at, 0.029, 0.0035));
+    continuous.push(lfo(synth, upper.detune, at, 0.06, 7));
   }
 
   function startFurnace(at: number): void {
@@ -364,7 +486,12 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConf
       const dur = stepSeconds();
       const step = stepIndex % STEPS_PER_BAR;
       const bar = Math.floor(stepIndex / STEPS_PER_BAR);
-      if (dawn) {
+      if (reserve) {
+        if (step === 0) {
+          if (bar % 2 === 0) glass(at, bar / 2);
+          else fall(at, (bar - 1) / 2);
+        }
+      } else if (dawn) {
         if (step === 0) {
           if (bar % 2 === 0) organ(at, bar / 2);
           else rise(at, (bar - 1) / 2);
@@ -404,6 +531,7 @@ export function createBed(synth: Synth, dest: AudioNode, id: BedId, cfg: BedConf
       stepIndex = 0;
       startAir(at);
       if (id === "bellkeeper") startFurnace(at);
+      if (reserve) startRim(at);
       scheduleUntil(at + 0.5);
     },
     schedule(until: number): void {

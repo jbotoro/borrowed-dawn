@@ -39,6 +39,7 @@ const MUTE_RAMP = 0.06;
 const PAUSE_DUCK = 0.5;
 
 function bedForRoom(room: Room, dawn: boolean): BedId {
+  if (room.music === "reserve") return "reserve";
   let id: BedId;
   if (room.music === "bellkeeper") id = "bellkeeper";
   else if (room.music === "cinder") id = "cinder";
