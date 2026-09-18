@@ -279,4 +279,36 @@ describe("determinism", () => {
     const b = play();
     expect(a).toBe(b);
   });
+
+  function bossSequence(game: Game, seconds: number): string[] {
+    const out: string[] = [];
+    const frames = Math.round(seconds / DT);
+    for (let i = 0; i < frames; i += 1) {
+      game.step(DT);
+      game.state.events.length = 0;
+      out.push(game.state.boss ? game.state.boss.state : "none");
+    }
+    return out;
+  }
+
+  it("replays the boss attack sequence for a second run in the same session", () => {
+    const game = createGame({
+      tuning,
+      seed: 42,
+      rooms: makeRooms(),
+      startRoom: "vault",
+      startPos: { x: 20, y: 1 },
+      god: true
+    });
+    game.setInput(emptyInput());
+
+    game.start();
+    const first = bossSequence(game, 20);
+    game.returnToTitle();
+    game.start();
+    const second = bossSequence(game, 20);
+
+    expect(new Set(first).size).toBeGreaterThan(3);
+    expect(second).toEqual(first);
+  });
 });

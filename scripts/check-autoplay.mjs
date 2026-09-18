@@ -89,6 +89,39 @@ try {
   assert(landing.y > 7 && landing.x < 3.4, `Return landed off the Gallery ledge at ${JSON.stringify(landing)}`);
   console.log(`${branch.state.time.toFixed(2)}s: gallery (floor hatch from the Cache)`);
   console.log("PASS: Gallery <-> Cache hatch in both directions");
+
+  const finale = createGame({ tuning, rooms, seed: 5, god: true, startRoom: "belfry" });
+  finale.setInput(emptyInput());
+  finale.start();
+  finale.state.progress.bossDefeated = true;
+  finale.respawn();
+  finale.state.events.length = 0;
+
+  const walker = createAutoplayInput(finale);
+  const finaleVisited = new Set([finale.state.roomId]);
+  console.log(`${finale.state.time.toFixed(2)}s: belfry (boss down, reserve door open)`);
+
+  let won = false;
+  for (let frame = 0; frame < 60 * 120; frame++) {
+    finale.setInput(walker.sample());
+    finale.step(1 / 60);
+    finale.state.events.length = 0;
+    if (!finaleVisited.has(finale.state.roomId)) {
+      finaleVisited.add(finale.state.roomId);
+      console.log(`${finale.state.time.toFixed(2)}s: ${finale.state.roomId}`);
+    }
+    if (finale.state.phase === "victory") {
+      won = true;
+      break;
+    }
+  }
+
+  const finalePos = JSON.stringify(finale.state.player.pos);
+  assert(finaleVisited.has("reserve"), `Finale route did not reach the Reserve; stopped at ${finalePos}`);
+  assert(finaleVisited.has("lenshall"), `Finale route did not reach the Lens Hall; stopped at ${finalePos}`);
+  assert(won, `Finale route did not reach the Dawn Core; stopped at ${finalePos}`);
+  console.log(`${finale.state.time.toFixed(2)}s: victory (Dawn Core)`);
+  console.log("PASS: Belfry -> Reserve -> Lens Hall -> victory with the boss down");
 } finally {
   await server.close();
 }

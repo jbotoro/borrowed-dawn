@@ -5,7 +5,7 @@ import { createProgress } from "../src/game/progress";
 import type { Game } from "../src/game/types";
 import { tuning } from "../src/tuning";
 import { DT, countEvents, emptyInput } from "./helpers";
-import { makeRooms } from "./fixtures/rooms";
+import { makeRooms, roomById } from "./fixtures/rooms";
 
 function newGame(): Game {
   const game = createGame({ tuning, seed: 11, rooms: makeRooms() });
@@ -130,7 +130,66 @@ describe("progress", () => {
 
     expect(game.state.roomId).toBe("vault");
     expect(game.state.progress.bossDefeated).toBe(true);
-    expect(game.state.boss).toBeNull();
+    expect(game.state.boss?.alive).toBe(false);
+    expect(game.state.boss?.state).toBe("dead");
+    expect(game.state.boss?.health).toBe(0);
     expect(game.state.enemies.length).toBe(0);
+  });
+
+  it("leaves inert remains when the courier returns to the arena after the kill", () => {
+    const rooms = makeRooms();
+    const vault = roomById(rooms, "vault");
+    vault.pickups = [];
+    const game = createGame({ tuning, seed: 11, rooms });
+    game.setInput(emptyInput());
+    game.start();
+
+    game.state.player.pos.x = 43;
+    stepN(game, 2);
+    expect(game.state.roomId).toBe("vault");
+    const live = game.state.boss;
+    expect(live).not.toBeNull();
+    if (live) {
+      hurtBoss(live, live.maxHealth, game.state.time, tuning, game.state.events);
+    }
+    game.state.player.pos.x = 3;
+    stepN(game, 2);
+    expect(game.state.progress.bossDefeated).toBe(true);
+
+    game.state.player.pos.x = 0.5;
+    stepN(game, 2);
+    expect(game.state.roomId).toBe("hall");
+    game.state.player.pos.x = 43;
+    stepN(game, 2);
+    expect(game.state.roomId).toBe("vault");
+
+    const boss = game.state.boss;
+    expect(boss).not.toBeNull();
+    if (!boss) {
+      throw new Error("no remains");
+    }
+    expect(boss.alive).toBe(false);
+    expect(boss.state).toBe("dead");
+    expect(boss.health).toBe(0);
+    expect(boss.stateStart).toBe(boss.stateUntil);
+
+    game.state.events.length = 0;
+    const health = game.state.player.health;
+    for (let i = 0; i < 600; i += 1) {
+      game.state.player.pos.x = boss.pos.x;
+      game.state.player.pos.y = boss.pos.y;
+      game.step(DT);
+      expect(boss.state).toBe("dead");
+      expect(boss.alive).toBe(false);
+    }
+
+    expect(game.state.phase).toBe("playing");
+    expect(game.state.player.health).toBe(health);
+    expect(countEvents(game.state.events, "bossTelegraph")).toBe(0);
+    expect(countEvents(game.state.events, "bossAttack")).toBe(0);
+    expect(countEvents(game.state.events, "bossDeath")).toBe(0);
+    expect(countEvents(game.state.events, "bossHurt")).toBe(0);
+    expect(countEvents(game.state.events, "gateOpen")).toBe(0);
+    expect(countEvents(game.state.events, "hurt")).toBe(0);
   });
 });

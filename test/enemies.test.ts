@@ -140,15 +140,19 @@ describe("guard", () => {
 });
 
 describe("stomper", () => {
-  it("hops toward the player and spawns two ground waves on landing", () => {
+  it("telegraphs, then hops toward the player and spawns two ground waves on landing", () => {
     const s = setup();
     const stomper = stomperOf(s.enemies);
     const player = playerAt(stomper.pos.x - 3, 1);
     let t = 0;
+    let telegraphed = false;
     let hopped = false;
     for (let i = 0; i < 400; i += 1) {
       stepEnemies(s.enemies, player, s.solids, s.hazards, t, DT, tuning);
       t += DT;
+      if (stomper.state === "telegraph" && !hopped) {
+        telegraphed = true;
+      }
       if (stomper.state === "attack") {
         hopped = true;
       }
@@ -156,6 +160,7 @@ describe("stomper", () => {
         break;
       }
     }
+    expect(telegraphed).toBe(true);
     expect(hopped).toBe(true);
     expect(stomper.facing).toBe(-1);
     const live = s.hazards.filter((h) => h.alive);
@@ -164,6 +169,57 @@ describe("stomper", () => {
     const dirs = live.map((h) => Math.sign(h.vel.x)).sort();
     expect(dirs).toEqual([-1, 1]);
     expect(live[0]?.damage).toBe(tuning.stomper.damage);
+  });
+
+  it("holds still for telegraphMs before every hop and keeps the hop interval", () => {
+    const s = setup();
+    const stomper = stomperOf(s.enemies);
+    const player = playerAt(stomper.pos.x - 3, 1);
+    const telegraphSec = tuning.stomper.telegraphMs / 1000;
+    const holds: number[] = [];
+    const cadences: number[] = [];
+    let previous = stomper.state;
+    let telegraphAt = -1;
+    let telegraphX = 0;
+    let landedAt = -1;
+    let t = 0;
+    for (let i = 0; i < 2000 && holds.length < 2; i += 1) {
+      player.pos.x = stomper.pos.x - 3;
+      player.pos.y = stomper.pos.y;
+      player.prev.x = player.pos.x;
+      player.prev.y = player.pos.y;
+      stepEnemies(s.enemies, player, s.solids, s.hazards, t, DT, tuning);
+      t += DT;
+      if (stomper.state === "telegraph") {
+        if (previous !== "telegraph") {
+          telegraphAt = t;
+          telegraphX = stomper.pos.x;
+        }
+        expect(stomper.pos.x).toBeCloseTo(telegraphX, 6);
+        expect(stomper.vel.x).toBe(0);
+        expect(stomper.grounded).toBe(true);
+        expect(stomper.facing).toBe(-1);
+      }
+      if (stomper.state === "attack" && previous === "telegraph") {
+        holds.push(t - telegraphAt);
+        if (landedAt >= 0) {
+          cadences.push(t - landedAt);
+        }
+      }
+      if (stomper.state === "recover" && previous === "attack") {
+        landedAt = t;
+      }
+      previous = stomper.state;
+    }
+    expect(holds.length).toBe(2);
+    for (const hold of holds) {
+      expect(hold).toBeGreaterThanOrEqual(telegraphSec - 1e-9);
+      expect(hold).toBeLessThan(telegraphSec + 2 * DT);
+    }
+    expect(cadences.length).toBe(1);
+    const cadence = cadences[0] ?? 0;
+    expect(cadence).toBeGreaterThan(tuning.stomper.hopIntervalMs / 1000 - 2 * DT);
+    expect(cadence).toBeLessThan(tuning.stomper.hopIntervalMs / 1000 + 2 * DT);
   });
 });
 

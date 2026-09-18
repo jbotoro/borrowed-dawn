@@ -91,6 +91,12 @@ export function stepHazards(hazards: Hazard[], bounds: Rect, solids: Rect[], t: 
     }
     hazard.prev.x = hazard.pos.x;
     hazard.prev.y = hazard.pos.y;
+    if (hazard.kind === "beam") {
+      if (t >= hazard.until) {
+        hazard.alive = false;
+      }
+      continue;
+    }
     hazard.pos.x += hazard.vel.x * dt;
     hazard.pos.y += hazard.vel.y * dt;
     if (hazard.kind === "ember" && hazard.vel.y < 0 && hitSolidBelow(hazard, solids)) {

@@ -51,7 +51,7 @@ export interface PlayerState {
   longwick: boolean;
 }
 
-export type EnemyKind = "guard" | "stomper" | "lamplighter";
+export type EnemyKind = "guard" | "stomper" | "lamplighter" | "sentry";
 export type EnemyState = "patrol" | "telegraph" | "attack" | "recover" | "hurt" | "dead";
 
 export interface Enemy {
@@ -65,6 +65,8 @@ export interface Enemy {
   health: number;
   state: EnemyState;
   stateUntil: number;
+  hurtFrom: EnemyState;
+  hurtRemain: number;
   patrolMinX: number;
   patrolMaxX: number;
   alive: boolean;
@@ -105,7 +107,7 @@ export interface Boss {
   flash: number;
 }
 
-export type HazardKind = "wave" | "ember";
+export type HazardKind = "wave" | "ember" | "beam";
 
 export interface Hazard {
   kind: HazardKind;
@@ -195,7 +197,9 @@ export type DecorKind =
   | "veil"
   | "jar"
   | "lens"
-  | "sunlight";
+  | "sunlight"
+  | "conduit"
+  | "shutter";
 
 export interface Decor {
   kind: DecorKind;
@@ -217,6 +221,7 @@ export interface RoomAmbience {
   fillColor: number;
   fillIntensity: number;
   emberDensity: number;
+  shaftDirX?: number;
 }
 
 export interface BossArena {

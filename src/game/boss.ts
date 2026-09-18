@@ -33,6 +33,19 @@ export function spawnBoss(room: Room, tuning: Tuning): Boss | null {
   };
 }
 
+export function spawnDefeatedBoss(room: Room, tuning: Tuning, t: number): Boss | null {
+  const boss = spawnBoss(room, tuning);
+  if (!boss) {
+    return null;
+  }
+  boss.health = 0;
+  boss.alive = false;
+  boss.state = "dead";
+  boss.stateStart = t;
+  boss.stateUntil = t;
+  return boss;
+}
+
 export function resetBoss(boss: Boss, room: Room, tuning: Tuning): void {
   const arena = room.bossArena;
   if (arena) {

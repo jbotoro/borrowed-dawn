@@ -13,7 +13,7 @@ import {
   pickupsFor,
   touchCheckpoint
 } from "./rooms";
-import { spawnBoss, stepBoss } from "./boss";
+import { spawnBoss, spawnDefeatedBoss, stepBoss } from "./boss";
 import type { Facing, Game, GameDeps, GameState, Input, Rect, Room, Vec2 } from "./types";
 
 export type * from "./types";
@@ -25,7 +25,15 @@ export { activeSolids, findRoom, checkpointRect, pickupRect } from "./rooms";
 export { attackHitbox, attackRect, applyHurt, createPlayer, playerReach } from "./player";
 export { aabbOf, moveAndCollide, rectsOverlap, createMoveResult } from "./physics";
 export { enemyConfig, hurtEnemy, spawnEnemies, stepEnemies } from "./enemies";
-export { bossAttackHitbox, bossBodyIsHazard, bossBodyRect, hurtBoss, spawnBoss, stepBoss } from "./boss";
+export {
+  bossAttackHitbox,
+  bossBodyIsHazard,
+  bossBodyRect,
+  hurtBoss,
+  spawnBoss,
+  spawnDefeatedBoss,
+  stepBoss
+} from "./boss";
 export { createHazards, spawnHazard, stepHazards } from "./hazards";
 export { createProgress } from "./progress";
 
@@ -114,7 +122,9 @@ export function createGame(deps: GameDeps): Game {
     }
     const bossRoom = room.bossArena !== undefined;
     state.enemies = bossRoom && state.progress.bossDefeated ? [] : spawnEnemies(room, tuning, state.time);
-    state.boss = state.progress.bossDefeated ? null : spawnBoss(room, tuning);
+    state.boss = state.progress.bossDefeated
+      ? spawnDefeatedBoss(room, tuning, state.time)
+      : spawnBoss(room, tuning);
     state.pickups = pickupsFor(room, state.progress);
     clearHazards(hazards);
     state.transition = null;
@@ -122,10 +132,18 @@ export function createGame(deps: GameDeps): Game {
     state.events.push({ kind: "roomEnter", x: pos.x, y: pos.y });
     if (bossRoom) {
       openGates(rooms, state.progress, "bossApproach", state.events);
+      if (state.progress.bossDefeated) {
+        openGates(rooms, state.progress, "bossDefeated", state.events);
+      }
     }
   }
 
+  function reseed(): void {
+    rng.seed = deps.seed >>> 0;
+  }
+
   function start(): void {
+    reseed();
     state.phase = "playing";
     state.time = 0;
     state.tick = 0;
@@ -145,6 +163,7 @@ export function createGame(deps: GameDeps): Game {
   }
 
   function returnToTitle(): void {
+    reseed();
     state.phase = "title";
     state.time = 0;
     state.tick = 0;

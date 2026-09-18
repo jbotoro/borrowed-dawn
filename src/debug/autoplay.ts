@@ -21,7 +21,8 @@ const FORWARD_DOOR: Record<string, string> = {
   landing: "gallery",
   gallery: "belfry",
   cache: "gallery",
-  belfry: "belfry"
+  belfry: "reserve",
+  reserve: "lenshall"
 };
 
 const BOSS_TELEGRAPHS: Boss["state"][] = [
@@ -32,8 +33,11 @@ const BOSS_TELEGRAPHS: Boss["state"][] = [
   "stompSlam"
 ];
 
-function doorTarget(room: Room): Vec2 {
-  const forward = FORWARD_DOOR[room.id];
+function doorTarget(room: Room, state: GameState): Vec2 {
+  const forward =
+    room.bossArena !== undefined && !state.progress.bossDefeated
+      ? room.id
+      : FORWARD_DOOR[room.id];
   for (const door of room.doors) {
     if (door.to === forward) {
       return { x: door.rect.x + door.rect.w / 2, y: door.rect.y };
@@ -210,7 +214,7 @@ export function createAutoplayInput(game: Game): InputSource {
       const target =
         waypointIndex < waypoints.length
           ? (waypoints[waypointIndex] as Vec2)
-          : doorTarget(room);
+          : doorTarget(room, state);
 
       const dx = target.x - player.pos.x;
       const dy = target.y - player.pos.y;
