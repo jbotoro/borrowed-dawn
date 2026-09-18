@@ -31,6 +31,9 @@ const TONGUE_COUNT = 4;
 const TONGUE_X = [-0.32, -0.12, 0.11, 0.34];
 const TONGUE_BASE_Y = [0.4, 0.74, 0.7, 0.36];
 const TONGUE_HEIGHT = [0.46, 0.72, 0.64, 0.42];
+const BEAM_MOTES = 4;
+const BEAM_OPEN = 0.12;
+const BEAM_FADE = 0.25;
 const SPARK_WAVES = 8;
 const SPARK_LIFE = 0.55;
 const MARK_THICKNESS = 0.055;
@@ -73,6 +76,20 @@ interface EmberView {
   group: THREE.Group;
   head: THREE.Mesh;
   tail: THREE.Mesh[];
+}
+
+interface BeamView {
+  group: THREE.Group;
+  glow: THREE.Mesh;
+  glowMaterial: THREE.MeshBasicMaterial;
+  body: THREE.Mesh;
+  bodyMaterial: THREE.MeshBasicMaterial;
+  core: THREE.Mesh;
+  coreMaterial: THREE.MeshBasicMaterial;
+  motes: THREE.Mesh[];
+  moteMaterial: THREE.MeshBasicMaterial;
+  flash: THREE.Mesh;
+  flashMaterial: THREE.MeshBasicMaterial;
 }
 
 function clamp01(value: number): number {
@@ -464,6 +481,75 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
     embers.push({ group: holder, head, tail });
   }
 
+  const beamGlowMap = glowTexture();
+  const beams: BeamView[] = [];
+  for (let i = 0; i < hazardSlots; i++) {
+    const holder = new THREE.Group();
+    holder.visible = false;
+
+    const glowMaterial = flatMaterial("reward", 0.5);
+    glowMaterial.blending = THREE.AdditiveBlending;
+    glowMaterial.map = beamGlowMap;
+    const glow = new THREE.Mesh(plane, glowMaterial);
+    holder.add(glow);
+
+    const bodyMaterial = flatMaterial("reward", 0.94);
+    const body = new THREE.Mesh(plane, bodyMaterial);
+    holder.add(body);
+
+    const coreMaterial = flatMaterial("actorMetal", 1);
+    const core = new THREE.Mesh(plane, coreMaterial);
+    holder.add(core);
+
+    const moteMaterial = flatMaterial("actorMetal", 1);
+    const motes: THREE.Mesh[] = [];
+    for (let k = 0; k < BEAM_MOTES; k++) {
+      const mote = new THREE.Mesh(diamond, moteMaterial);
+      holder.add(mote);
+      motes.push(mote);
+    }
+
+    const flashMaterial = flatMaterial("reward", 1);
+    flashMaterial.blending = THREE.AdditiveBlending;
+    flashMaterial.map = beamGlowMap;
+    const flash = new THREE.Mesh(plane, flashMaterial);
+    holder.add(flash);
+
+    holder.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh === true) {
+        mesh.frustumCulled = false;
+        mesh.layers.set(ACTOR_LAYER);
+      }
+    });
+    group.add(holder);
+    beams.push({
+      group: holder,
+      glow,
+      glowMaterial,
+      body,
+      bodyMaterial,
+      core,
+      coreMaterial,
+      motes,
+      moteMaterial,
+      flash,
+      flashMaterial
+    });
+  }
+
+  function beamFacing(state: GameState, live: Tuning, cx: number, cy: number, w: number): number {
+    const cfg = live.sentry;
+    for (const enemy of state.enemies) {
+      if (enemy.kind !== "sentry") continue;
+      if (Math.abs(enemy.pos.y + cfg.height * 0.5 - cy) > cfg.height * 0.6) continue;
+      const reach = (cfg.width + w) * 0.5;
+      if (Math.abs(enemy.pos.x + enemy.facing * reach - cx) > 0.6) continue;
+      return enemy.facing;
+    }
+    return 1;
+  }
+
   interface PickupView {
     group: THREE.Group;
     mesh: THREE.Mesh;
@@ -704,7 +790,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       for (const enemy of state.enemies) {
         if (markIndex >= MARK_SLOTS) break;
         if (!enemy.alive || enemy.state !== "telegraph") continue;
-        if (enemy.kind === "lamplighter") continue;
+        if (enemy.kind === "lamplighter" || enemy.kind === "sentry") continue;
         const mark = enemyMarks[markIndex];
         if (mark === undefined) break;
         markIndex++;
@@ -714,7 +800,7 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
         const ex = enemy.prev.x + (enemy.pos.x - enemy.prev.x) * alpha;
         const ey = enemy.prev.y + (enemy.pos.y - enemy.prev.y) * alpha;
         const left = enemy.facing > 0 ? ex - cfg.width * 0.5 : ex - cfg.width * 0.5 - lunge;
-        const dur = Math.max(live.guard.telegraphMs, 1) / 1000;
+        const dur = Math.max(cfg.telegraphMs, 1) / 1000;
         const p = clamp01(1 - (enemy.stateUntil - t) / dur);
         placeMark(
           mark,
@@ -779,17 +865,64 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
 
       let ridgeIndex = 0;
       let emberIndex = 0;
+      let beamIndex = 0;
       for (let i = 0; i < state.hazards.length; i++) {
         const hazard = state.hazards[i];
         if (hazard === undefined) continue;
         const wasSeen = hazardSeen[i] === true;
-        if (hazard.alive && !wasSeen && hazard.kind !== "ember") {
+        if (hazard.alive && !wasSeen && hazard.kind === "wave") {
           spawnPuffs(hazard.pos.x, hazard.pos.y, t, live, 0.6);
         }
         hazardSeen[i] = hazard.alive;
         if (!hazard.alive) continue;
         const hx = hazard.prev.x + (hazard.pos.x - hazard.prev.x) * alpha;
         const hy = hazard.prev.y + (hazard.pos.y - hazard.prev.y) * alpha;
+
+        if (hazard.kind === "beam") {
+          if (beamIndex >= beams.length) continue;
+          const view = beams[beamIndex];
+          if (view === undefined) continue;
+          beamIndex++;
+          const life = Math.max(live.sentry.beamMs, 1) / 1000;
+          const p = clamp01(1 - (hazard.until - t) / life);
+          const open = clamp01(p / BEAM_OPEN);
+          const out = p > 1 - BEAM_FADE ? clamp01((1 - p) / BEAM_FADE) : 1;
+          const cy = hazard.h * 0.5;
+          const dir = beamFacing(state, live, hazard.pos.x, hazard.pos.y + cy, hazard.w);
+
+          view.group.visible = true;
+          view.group.position.set(hx, hy, FX_Z);
+          view.glow.position.set(0, cy, -0.02);
+          view.glow.scale.set(hazard.w * 1.06, hazard.h * 3.4 * (0.4 + 0.6 * open), 1);
+          view.glowMaterial.opacity = 0.55 * out;
+          view.body.position.set(0, cy, 0.01);
+          view.body.scale.set(hazard.w, hazard.h * 0.7 * open, 1);
+          view.bodyMaterial.opacity = 0.94 * out;
+          view.core.position.set(0, cy, 0.02);
+          view.core.scale.set(hazard.w, hazard.h * 0.22 * open, 1);
+          view.coreMaterial.opacity = out;
+
+          for (let k = 0; k < BEAM_MOTES; k++) {
+            const mote = view.motes[k];
+            if (mote === undefined) continue;
+            const travel = (k / BEAM_MOTES + rt * 0.9) % 1;
+            const size = hazard.h * (0.3 + 0.12 * Math.sin(rt * 7 + k * 1.7));
+            mote.position.set(
+              dir * (travel - 0.5) * hazard.w,
+              cy + Math.sin(rt * 9 + k * 2.1) * hazard.h * 0.16,
+              0.03
+            );
+            mote.scale.set(size, size, 1);
+          }
+          view.moteMaterial.opacity = out * (0.7 + 0.3 * Math.sin(rt * 11));
+
+          const flashP = clamp01(p / 0.3);
+          const flashSize = hazard.h * (2.4 + 3.2 * flashP);
+          view.flash.position.set(-dir * hazard.w * 0.5, cy, 0.04);
+          view.flash.scale.set(flashSize, flashSize, 1);
+          view.flashMaterial.opacity = (1 - flashP) * 0.9;
+          continue;
+        }
 
         if (hazard.kind === "ember") {
           if (emberIndex >= embers.length) continue;
@@ -879,6 +1012,10 @@ export function createFx(tuning: Tuning, look: LookProfile): Fx {
       for (let i = emberIndex; i < embers.length; i++) {
         const drop = embers[i];
         if (drop !== undefined) drop.group.visible = false;
+      }
+      for (let i = beamIndex; i < beams.length; i++) {
+        const view = beams[i];
+        if (view !== undefined) view.group.visible = false;
       }
 
       let pickupIndex = 0;

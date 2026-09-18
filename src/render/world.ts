@@ -38,6 +38,13 @@ export interface RenderWorld {
 
 const COLOR_BACKGROUND = 0x070b12;
 
+declare global {
+  interface Window {
+    __omrScene: THREE.Scene;
+    __omrCamera: THREE.Camera;
+  }
+}
+
 export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): RenderWorld {
   const look = resolveLook(tuning.feel.toonBands);
   mountLookBar(look.id);
@@ -187,6 +194,8 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
   const targetKey = new THREE.Color(rig.key.color);
   const targetFill = new THREE.Color(rig.fill.color);
 
+  let shaftDirX = tuning.feel.shaftDirX;
+  let targetShaftDirX = tuning.feel.shaftDirX;
   let targetFogNear = tuning.feel.fogNear;
   let targetFogFar = tuning.feel.fogFar;
   let targetHemi = tuning.feel.hemiIntensity;
@@ -212,6 +221,8 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
   function resolveTargets(live: Tuning, victory: boolean, dawn: boolean): void {
     const amb = ambience;
     const sat = look.ambienceSaturation;
+    targetShaftDirX =
+      amb === null || amb.shaftDirX === undefined ? live.feel.shaftDirX : amb.shaftDirX;
     if (amb === null) {
       targetFog.setHex(baseBackground);
       targetSky.setHex(rig.hemiSky);
@@ -262,6 +273,7 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
     key.color.lerp(targetKey, rate);
     fill.color.lerp(targetFill, rate);
 
+    shaftDirX += (targetShaftDirX - shaftDirX) * rate;
     fog.near += (targetFogNear - fog.near) * rate;
     fog.far += (targetFogFar - fog.far) * rate;
     hemi.intensity += (targetHemi - hemi.intensity) * rate;
@@ -286,9 +298,16 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
 
   window.addEventListener("resize", resize);
 
+  window.__omrScene = scene;
+  window.__omrCamera = camera.camera;
+
   return {
     setRoom(nextRoom: Room, progress: Progress): void {
       ambience = nextRoom.ambience === undefined ? null : nextRoom.ambience;
+      const amb = ambience;
+      targetShaftDirX =
+        amb === null || amb.shaftDirX === undefined ? tuning.feel.shaftDirX : amb.shaftDirX;
+      shaftDirX = targetShaftDirX;
       if (builtRoomId !== nextRoom.id) {
         builtRoomId = nextRoom.id;
         room.build(nextRoom, progress);
@@ -328,7 +347,7 @@ export function createRenderWorld(canvas: HTMLCanvasElement, tuning: Tuning): Re
         spot.target.position.set(state.player.pos.x, state.player.pos.y, 0);
         spot.target.updateMatrixWorld();
       }
-      postfx.sync(live.feel);
+      postfx.sync(live.feel, shaftDirX);
     },
 
     onEvent(event: GameEvent, state: GameState, live: Tuning): void {

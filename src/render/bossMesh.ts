@@ -253,6 +253,20 @@ export function createBossMesh(tuning: Tuning, look: LookProfile): BossMesh {
   const visorMat = look.material("void", { unlit: true }) as THREE.MeshBasicMaterial;
   const crackMat = look.material("bossFurnace", { unlit: true }) as THREE.MeshBasicMaterial;
 
+  for (const mat of [
+    charcoalMat,
+    slateMat,
+    ashMat,
+    chainMat,
+    porcelainMat,
+    mouthMat,
+    visorMat,
+    crackMat
+  ]) {
+    mat.fog = false;
+    mat.needsUpdate = true;
+  }
+
   const charcoalBase = new THREE.Color(charcoalMat.color);
   const slateBase = new THREE.Color(slateMat.color);
   const ashBase = new THREE.Color(ashMat.color);

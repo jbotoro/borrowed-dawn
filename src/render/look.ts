@@ -123,6 +123,10 @@ export function registerActorLight(light: THREE.Light): void {
   actorLightSet.add(light);
 }
 
+export function releaseActorLight(light: THREE.Light): void {
+  actorLightSet.delete(light);
+}
+
 export function actorLights(): ReadonlySet<THREE.Light> {
   return actorLightSet;
 }

@@ -429,6 +429,11 @@ export function createPlayerMesh(tuning: Tuning, look: LookProfile): PlayerMesh 
   const glassMat = look.material("actorGlass", { unlit: true }) as THREE.MeshBasicMaterial;
   const flameMat = look.material("reward", { unlit: true }) as THREE.MeshBasicMaterial;
 
+  for (const mat of [slateMat, charcoalMat, dimpleMat, porcelainMat, glassMat, flameMat]) {
+    mat.fog = false;
+    mat.needsUpdate = true;
+  }
+
   const slateBase = new THREE.Color(slateMat.color);
   const charcoalBase = new THREE.Color(charcoalMat.color);
   const dimpleBase = new THREE.Color(dimpleMat.color);

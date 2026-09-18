@@ -232,6 +232,77 @@ const LAMP_LINK_HOLE: Point[] = [
   [-0.013, -0.017]
 ];
 
+const SENTRY_COLLAR: Point[] = [
+  [-0.19, 0.34],
+  [0.19, 0.34],
+  [0.15, 0.55],
+  [-0.15, 0.55]
+];
+
+const SENTRY_COLLAR_RIM: Point[] = [
+  [-0.155, 0.545],
+  [0.155, 0.545],
+  [0.16, 0.585],
+  [-0.16, 0.585]
+];
+
+const SENTRY_HOUSING: Point[] = [
+  [0.29, 0.1],
+  [0.37, 0.19],
+  [0.16, 0.3],
+  [0.0, 0.32],
+  [-0.18, 0.27],
+  [-0.29, 0.14],
+  [-0.31, -0.04],
+  [-0.24, -0.2],
+  [-0.1, -0.29],
+  [0.08, -0.3],
+  [0.22, -0.23],
+  [0.29, -0.1]
+];
+
+const SENTRY_LEGS: [number, number][] = [
+  [-0.55, 0.52],
+  [0.06, 0.44],
+  [0.55, 0.52]
+];
+
+const SENTRY_EYE_Y = 0.72;
+const SENTRY_NECK_Y = 0.5;
+const SENTRY_HUB_Y = 0.44;
+const SENTRY_PUPIL_R = 0.215;
+const SENTRY_RIM_R = 0.245;
+const SENTRY_IRIS_R = 0.1;
+
+function sentryLegPoints(length: number): Point[] {
+  const foot = -length;
+  return [
+    [-0.052, 0.03],
+    [0.052, 0.03],
+    [0.038, foot + 0.15],
+    [0.072, foot + 0.07],
+    [0.072, foot],
+    [-0.072, foot],
+    [-0.072, foot + 0.07],
+    [-0.038, foot + 0.15]
+  ];
+}
+
+function squashPoints(points: Point[], squash: number): Point[] {
+  const out: Point[] = [];
+  for (const point of points) out.push([point[0], point[1] * squash]);
+  return out;
+}
+
+function discPoints(radius: number, segments: number, squash: number): Point[] {
+  const points: Point[] = [];
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push([Math.cos(angle) * radius, Math.sin(angle) * radius * squash]);
+  }
+  return points;
+}
+
 function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
@@ -315,6 +386,7 @@ interface EnemyView {
   hips: THREE.Object3D[];
   feet: THREE.Object3D[];
   chains: THREE.Object3D[];
+  iris: THREE.Object3D | null;
   slateMat: THREE.MeshBasicMaterial;
   ashMat: THREE.MeshBasicMaterial;
   accentMat: THREE.MeshBasicMaterial;
@@ -345,6 +417,13 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
   const slateProto = look.material("enemyBody", { unlit: true }) as THREE.MeshBasicMaterial;
   const ashProto = look.material("ash", { unlit: true }) as THREE.MeshBasicMaterial;
   const charcoalProto = look.material("bossShell", { unlit: true }) as THREE.MeshBasicMaterial;
+  const voidMat = look.material("void", { unlit: true, fog: false }) as THREE.MeshBasicMaterial;
+
+  for (const mat of [porcelainMat, slateProto, ashProto, charcoalProto]) {
+    mat.fog = false;
+    mat.needsUpdate = true;
+  }
+
   const visorRest = new THREE.Color(look.colorOf("ash", tuning.feel.guardVisorRestShade));
   const visorHot = new THREE.Color(look.colorOf("enemyAccent"));
   const glowRest = new THREE.Color(look.colorOf("reward"));
@@ -444,6 +523,7 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
       hips,
       feet: [],
       chains: [],
+      iris: null,
       slateMat,
       ashMat,
       accentMat,
@@ -533,6 +613,7 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
       hips: [],
       feet,
       chains: [],
+      iris: null,
       slateMat,
       ashMat,
       accentMat,
@@ -643,6 +724,7 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
       hips: [],
       feet: [],
       chains,
+      iris: null,
       slateMat,
       ashMat,
       accentMat,
@@ -658,6 +740,111 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
       phase: 0,
       seen: false,
       wasGrounded: false
+    };
+  }
+
+  function buildSentry(): EnemyView {
+    const root = new THREE.Group();
+    const stack = new THREE.Object3D();
+    root.add(stack);
+    const lean = new THREE.Object3D();
+    lean.position.set(0, SENTRY_HUB_Y, 0);
+    stack.add(lean);
+
+    const slateMat = slateProto.clone();
+    const ashMat = ashProto.clone();
+    const accentMat = slateProto.clone();
+    accentMat.color.copy(glowRest);
+
+    const body = new THREE.Object3D();
+    body.position.set(0, -SENTRY_HUB_Y, 0);
+    lean.add(body);
+
+    const hips: THREE.Object3D[] = [];
+    let legIndex = 0;
+    for (const spec of SENTRY_LEGS) {
+      const hip = new THREE.Object3D();
+      hip.position.set((legIndex - 1) * 0.07, SENTRY_HUB_Y, (legIndex - 1) * step);
+      hip.rotation.z = spec[0];
+      stack.add(hip);
+      hip.add(plate(sentryLegPoints(spec[1]), slateMat, depth));
+      stack.add(pin((legIndex - 1) * 0.07, SENTRY_HUB_Y, depth * 0.6 + step));
+      hips.push(hip);
+      legIndex++;
+    }
+
+    body.add(plate(SENTRY_COLLAR, slateMat, depth));
+    const collarRim = plate(SENTRY_COLLAR_RIM, porcelainMat, depth * 0.8);
+    collarRim.position.z = step;
+    body.add(collarRim);
+
+    const head = new THREE.Object3D();
+    head.position.set(0, SENTRY_NECK_Y, 0);
+    body.add(head);
+
+    const lift = SENTRY_EYE_Y - SENTRY_NECK_Y;
+    const squash = Math.max(tuning.sentry.width / Math.max(tuning.sentry.height, 0.01), 0.1);
+
+    const housing = plate(squashPoints(SENTRY_HOUSING, squash), slateMat, depth);
+    housing.position.y += lift;
+    housing.position.z = -step;
+    head.add(housing);
+
+    const pupil = plate(discPoints(SENTRY_PUPIL_R, 18, squash), voidMat, depth * 0.8);
+    pupil.position.y += lift;
+    head.add(pupil);
+
+    const iris = plate(discPoints(SENTRY_IRIS_R, 16, squash), accentMat, depth * 0.6);
+    iris.position.y += lift;
+    iris.position.z = step * 0.5;
+    head.add(iris);
+
+    const rim = plate(
+      discPoints(SENTRY_RIM_R, 22, squash),
+      porcelainMat,
+      depth * 0.7,
+      [pathOf(discPoints(SENTRY_PUPIL_R, 22, squash))]
+    );
+    rim.position.y += lift;
+    rim.position.z = step;
+    head.add(rim);
+    head.add(pin(0, 0, depth * 0.6 + step));
+
+    group.add(root);
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh === true) mesh.layers.set(look.actorLayer);
+    });
+    applyOutline(root, tuning.feel.outlineThickness, look);
+
+    return {
+      id: -1,
+      kind: "sentry",
+      group: root,
+      stack,
+      lean,
+      body,
+      head,
+      arm: null,
+      hips,
+      feet: [],
+      chains: [],
+      iris,
+      slateMat,
+      ashMat,
+      accentMat,
+      backMat: null,
+      slateBase: new THREE.Color(slateProto.color),
+      ashBase: new THREE.Color(ashProto.color),
+      accentBase: glowRest,
+      accentHot: glowHot,
+      backBase: new THREE.Color(charcoalProto.color),
+      restY: -SENTRY_HUB_Y,
+      deadAt: 0,
+      squash: 1,
+      phase: 0,
+      seen: false,
+      wasGrounded: true
     };
   }
 
@@ -677,7 +864,9 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         ? buildGuard()
         : enemy.kind === "lamplighter"
           ? buildLamplighter()
-          : buildStomper();
+          : enemy.kind === "sentry"
+            ? buildSentry()
+            : buildStomper();
     created.id = enemy.id;
     views.push(created);
     return created;
@@ -704,16 +893,23 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
             ? live.guard
             : enemy.kind === "lamplighter"
               ? live.lamplighter
-              : live.stomper;
+              : enemy.kind === "sentry"
+                ? live.sentry
+                : live.stomper;
         const telegraphDur =
           enemy.kind === "lamplighter"
             ? Math.max(live.lamplighter.dropTelegraphMs, 1) / 1000
-            : Math.max(live.guard.telegraphMs, 1) / 1000;
+            : enemy.kind === "sentry"
+              ? Math.max(live.sentry.chargeMs, 1) / 1000
+              : enemy.kind === "stomper"
+                ? Math.max(live.stomper.telegraphMs, 1) / 1000
+                : Math.max(live.guard.telegraphMs, 1) / 1000;
+        const dying = !enemy.alive || enemy.state === "dead";
         const x = enemy.prev.x + (enemy.pos.x - enemy.prev.x) * alpha;
         const y = enemy.prev.y + (enemy.pos.y - enemy.prev.y) * alpha;
 
         let fade = 1;
-        if (!enemy.alive || enemy.state === "dead") {
+        if (dying) {
           if (view.deadAt === 0) view.deadAt = t;
           const life = Math.max(feel.enemyDeathFadeMs, 1) / 1000;
           fade = 1 - (t - view.deadAt) / life;
@@ -727,7 +923,8 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
 
         const flash = enemy.flash < 0 ? 0 : enemy.flash > 1 ? 1 : enemy.flash;
         const step2 = flashStep(flash);
-        const recoil = step2 * feel.enemyRecoilDistance * -enemy.facing;
+        const recoil =
+          enemy.kind === "sentry" ? 0 : step2 * feel.enemyRecoilDistance * -enemy.facing;
 
         view.group.visible = true;
         view.group.position.set(x + recoil, y, 0);
@@ -737,7 +934,13 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         if (enemy.kind === "stomper") {
           const landed = enemy.grounded && !view.wasGrounded;
           if (landed) view.squash = feel.stomperSquash;
-          view.squash += (1 - view.squash) * Math.min(1, feel.stomperSquashRecoverPerSec * dt);
+          if (enemy.state === "telegraph") {
+            const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
+            const eased = p * p * (3 - 2 * p);
+            view.squash = Math.min(view.squash, 1 + (feel.stomperSquash - 1) * eased);
+          } else {
+            view.squash += (1 - view.squash) * Math.min(1, feel.stomperSquashRecoverPerSec * dt);
+          }
         }
         view.wasGrounded = enemy.grounded;
 
@@ -754,6 +957,8 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         const moving = Math.abs(enemy.vel.x) > 0.2;
         if (enemy.kind === "lamplighter") {
           view.phase += dt * live.lamplighter.bobSpeed;
+        } else if (enemy.kind === "sentry") {
+          view.phase += dt * 1.1;
         } else if (moving && enemy.state === "patrol") {
           view.phase += dt * feel.legSwingSpeed * 0.42;
         }
@@ -762,7 +967,38 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         let drop = 0;
         let armTarget = 0.6;
         let headTarget = 0;
-        if (enemy.kind === "lamplighter") {
+        let irisScale = 1;
+        let legTense = 0;
+        if (enemy.kind === "sentry") {
+          if (dying) {
+            leanTarget = leanAmount * 0.9;
+            headTarget = 0.75;
+            drop = -0.05;
+            irisScale = 0.18;
+          } else if (enemy.state === "telegraph") {
+            const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
+            leanTarget = -leanAmount * 0.32 * p;
+            headTarget = -0.1 * p;
+            irisScale = 1 + 1.15 * p * p;
+            legTense = 0.16 * p;
+          } else if (enemy.state === "attack") {
+            leanTarget = leanAmount * 0.22;
+            headTarget = 0.05;
+            irisScale = 2.7;
+            legTense = 0.22;
+          } else if (enemy.state === "recover") {
+            leanTarget = leanAmount * 0.55;
+            headTarget = 0.5;
+            drop = -0.03;
+            irisScale = 0.4;
+          } else if (enemy.state === "hurt") {
+            headTarget = 0.14;
+            irisScale = 1.15;
+          } else {
+            headTarget = Math.sin(view.phase * 0.6) * 0.07;
+            irisScale = 1 + Math.sin(view.phase * 1.4) * 0.06;
+          }
+        } else if (enemy.kind === "lamplighter") {
           if (enemy.state === "telegraph") {
             const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
             leanTarget = leanAmount * 0.4 * p;
@@ -819,14 +1055,23 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
         if (arm !== null) arm.rotation.z += (armTarget - arm.rotation.z) * follow;
         const head = view.head;
         if (head !== null) head.rotation.z += (headTarget - head.rotation.z) * follow;
+        const iris = view.iris;
+        if (iris !== null) {
+          const scale = iris.scale.x + (irisScale - iris.scale.x) * follow;
+          iris.scale.set(scale, scale, 1);
+        }
 
         const swing = THREE.MathUtils.degToRad(feel.enemyLeanDeg) * 0.9;
         let hipIndex = 0;
         for (const hip of view.hips) {
-          const target =
-            moving && enemy.state === "patrol"
-              ? Math.sin(view.phase + hipIndex * Math.PI) * swing
-              : 0;
+          let target = 0;
+          if (enemy.kind === "sentry") {
+            const spec = SENTRY_LEGS[hipIndex];
+            const rest = spec === undefined ? 0 : spec[0];
+            target = rest * (1 - legTense) + (dying && hipIndex === 0 ? 0.62 : 0);
+          } else if (moving && enemy.state === "patrol") {
+            target = Math.sin(view.phase + hipIndex * Math.PI) * swing;
+          }
           hip.rotation.z += (target - hip.rotation.z) * follow;
           hipIndex++;
         }
@@ -854,11 +1099,11 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
           chainIndex++;
         }
 
-        const dark = !enemy.alive || enemy.state === "dead";
+        const dark = dying;
         let hot = 0;
         if (enemy.state === "telegraph") {
           const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
-          hot = 0.4 + 0.6 * p;
+          hot = enemy.kind === "stomper" ? p * p * (3 - 2 * p) : 0.4 + 0.6 * p;
         } else if (enemy.state === "attack") {
           hot = 1;
         } else if (enemy.kind === "stomper" && !enemy.grounded) {
@@ -867,7 +1112,21 @@ export function createEnemyMeshes(tuning: Tuning, look: LookProfile): EnemyMeshe
 
         if (enemy.kind !== "guard" && dark) hot = 0;
 
-        if (enemy.kind === "lamplighter" && dark) {
+        if (enemy.kind === "sentry") {
+          if (dark) {
+            scratch.copy(view.backBase);
+          } else if (enemy.state === "attack") {
+            scratch.copy(view.accentHot);
+          } else if (enemy.state === "telegraph") {
+            const p = clamp01(1 - (enemy.stateUntil - t) / telegraphDur);
+            scratch.copy(view.accentBase).lerp(WHITE, 0.12 + 0.6 * p);
+          } else if (enemy.state === "recover") {
+            scratch.copy(view.accentBase).lerp(view.backBase, 0.82);
+          } else {
+            scratch.copy(view.accentBase);
+          }
+          scratch.lerp(WHITE, step2);
+        } else if (enemy.kind === "lamplighter" && dark) {
           scratch.copy(view.backBase).lerp(WHITE, step2);
         } else {
           scratch.copy(view.accentBase).lerp(view.accentHot, hot).lerp(WHITE, step2);

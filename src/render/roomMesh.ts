@@ -2,7 +2,15 @@ import * as THREE from "three";
 import type { Tuning } from "../tuning";
 import type { Decor, DecorKind, Door, Progress, Rect, Room, Vec2 } from "../game/types";
 import type { LitMaterial, LookProfile } from "./look";
-import { hallBaseColor, hallTopColor, paleKey, shadeOf } from "./look";
+import {
+  ACTOR_LAYER,
+  hallBaseColor,
+  hallTopColor,
+  paleKey,
+  registerActorLight,
+  releaseActorLight,
+  shadeOf
+} from "./look";
 
 export interface RoomMesh {
   group: THREE.Group;
@@ -22,7 +30,11 @@ export interface RoomMesh {
 
 type Feel = Tuning["feel"];
 
-const MAX_DECOR_LIGHTS = 4;
+const LIGHT_PRIORITY_KEY = 0;
+const LIGHT_PRIORITY_JAR = 1;
+const LIGHT_PRIORITY_FURNACE = 2;
+const LIGHT_PRIORITY_CONDUIT = 3;
+const LIGHT_PRIORITY_REST = 4;
 const FAR_Z = -6;
 const CAP_LIFT = 0.008;
 const CAP_OVERHANG = 0.008;
@@ -33,9 +45,15 @@ const WARM_TARGETS: Record<string, boolean> = {
   vault: true,
   sunwell: true
 };
+const PALE_TARGETS: Record<string, boolean> = {
+  reserve: true,
+  lenshall: true
+};
 const GLASS_TINT = 0xc8d6e4;
+const PALE_SPILL = 0xb6cde2;
 const HALO_SIZE = 64;
-const KEY_LIFT = 0.55;
+const JAMB_ORB_RADIUS = 0.5;
+const DOOR_LIGHT_DAWN_CAP = 1.3;
 const PLATFORM_KINDS: DecorKind[] = ["stair", "gallery", "beam", "bench", "crate", "wall"];
 
 interface Tagged {
@@ -85,6 +103,13 @@ interface DoorGlow {
   mesh: THREE.Object3D;
   scaleX: number;
   scaleY: number;
+  grow: number;
+  lengthOnly: boolean;
+}
+
+interface DoorPanel {
+  material: THREE.MeshBasicMaterial;
+  base: THREE.Color;
 }
 
 interface DoorLight {
@@ -99,11 +124,34 @@ interface DoorPlate {
   lift: number;
 }
 
+type PassageTone = "warm" | "pale" | "ash";
+
 interface Opening {
   door: Door;
   rect: Rect;
   side: "left" | "right" | "floor" | "ceiling";
   warm: boolean;
+  tone: PassageTone;
+}
+
+interface Conduit {
+  bands: THREE.Object3D[];
+  offsets: number[];
+  axis: "x" | "y";
+  start: number;
+  length: number;
+  core: THREE.MeshBasicMaterial;
+  band: THREE.MeshBasicMaterial;
+  base: THREE.Color;
+  light: THREE.PointLight | null;
+  lightBase: number;
+  phase: number;
+}
+
+interface Shutter {
+  id: string;
+  sealed: THREE.Object3D;
+  open: THREE.Object3D;
 }
 
 interface FadePart {
@@ -392,13 +440,20 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   const breakables: Tagged[] = [];
   const flames: Flame[] = [];
   const jars: JarPulse[] = [];
+  const conduits: Conduit[] = [];
+  const shutters: Shutter[] = [];
   const sways: SwayEntry[] = [];
+  let roomFogHex = ramp.void;
+  let roomClip: Rect | null = null;
+  const clipBox = new THREE.Box3();
+  const ownedActorLights: THREE.Light[] = [];
   let embers: EmberField | null = null;
-  let decorLights = 0;
+  const decorLights: { light: THREE.PointLight; priority: number }[] = [];
   let currentOpenings: Opening[] = [];
   let currentRoom: Room | null = null;
   let sealedOpenings = new Set<Opening>();
   const doorGlows: DoorGlow[] = [];
+  const doorPanels: DoorPanel[] = [];
   const doorLights: DoorLight[] = [];
   const doorPlates: DoorPlate[] = [];
   const veils: Veil[] = [];
@@ -730,10 +785,15 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     breakables.length = 0;
     flames.length = 0;
     jars.length = 0;
+    conduits.length = 0;
+    shutters.length = 0;
     sways.length = 0;
+    for (const light of ownedActorLights) releaseActorLight(light);
+    ownedActorLights.length = 0;
     embers = null;
-    decorLights = 0;
+    decorLights.length = 0;
     doorGlows.length = 0;
+    doorPanels.length = 0;
     doorLights.length = 0;
     doorPlates.length = 0;
     veils.length = 0;
@@ -748,6 +808,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     }
     for (const entry of breakables) {
       entry.mesh.visible = progress.broken.indexOf(entry.id) === -1;
+    }
+    for (const entry of shutters) {
+      const shut = progress.opened.indexOf(entry.id) === -1;
+      entry.sealed.visible = shut;
+      entry.open.visible = !shut;
     }
   }
 
@@ -783,15 +848,84 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     distance: number,
     x: number,
     y: number,
-    z: number
+    z: number,
+    priority: number
   ): THREE.PointLight | null {
-    if (decorLights >= MAX_DECOR_LIGHTS) return null;
-    decorLights++;
+    const cap = Math.max(0, Math.round(tuning.feel.decorLightCap));
+    if (cap <= 0) return null;
+    if (decorLights.length >= cap) {
+      let worst = -1;
+      let worstPriority = priority;
+      for (let i = 0; i < decorLights.length; i++) {
+        const slot = decorLights[i];
+        if (slot === undefined || slot.priority <= worstPriority) continue;
+        worst = i;
+        worstPriority = slot.priority;
+      }
+      if (worst < 0) return null;
+      const evicted = decorLights[worst];
+      if (evicted === undefined) return null;
+      group.remove(evicted.light);
+      evicted.light.intensity = 0;
+      decorLights.splice(worst, 1);
+    }
     const light = new THREE.PointLight(hex, intensity, distance, 2);
     light.layers.enableAll();
     light.position.set(x, y, z);
     group.add(light);
+    decorLights.push({ light, priority });
     return light;
+  }
+
+  function fitToClip(mesh: THREE.Mesh, clip: Rect | null): THREE.Mesh {
+    if (clip === null) return mesh;
+    mesh.updateWorldMatrix(true, false);
+    clipBox.setFromObject(mesh);
+    const spanX = clipBox.max.x - clipBox.min.x;
+    if (spanX > 0.02) {
+      const x0 = Math.max(clipBox.min.x, clip.x);
+      const x1 = Math.min(clipBox.max.x, clip.x + clip.w);
+      if (x1 - x0 < 0.04) {
+        mesh.visible = false;
+        return mesh;
+      }
+      if (x1 - x0 < spanX - 0.002) {
+        mesh.scale.x *= (x1 - x0) / spanX;
+        mesh.position.x += (x0 + x1) * 0.5 - (clipBox.min.x + clipBox.max.x) * 0.5;
+      }
+    }
+    const spanY = clipBox.max.y - clipBox.min.y;
+    if (spanY > 0.02) {
+      const y0 = Math.max(clipBox.min.y, clip.y);
+      const y1 = Math.min(clipBox.max.y, clip.y + clip.h);
+      if (y1 - y0 < 0.04) {
+        mesh.visible = false;
+        return mesh;
+      }
+      if (y1 - y0 < spanY - 0.002) {
+        mesh.scale.y *= (y1 - y0) / spanY;
+        mesh.position.y += (y0 + y1) * 0.5 - (clipBox.min.y + clipBox.max.y) * 0.5;
+      }
+    }
+    return mesh;
+  }
+
+  function growLimit(mesh: THREE.Mesh, clip: Rect | null): number {
+    if (clip === null || !mesh.visible) return 1;
+    mesh.updateWorldMatrix(true, false);
+    clipBox.setFromObject(mesh);
+    let cap = 4;
+    const halfX = (clipBox.max.x - clipBox.min.x) * 0.5;
+    if (halfX > 0.02) {
+      const cx = (clipBox.min.x + clipBox.max.x) * 0.5;
+      cap = Math.min(cap, (cx - clip.x) / halfX, (clip.x + clip.w - cx) / halfX);
+    }
+    const halfY = (clipBox.max.y - clipBox.min.y) * 0.5;
+    if (halfY > 0.02) {
+      const cy = (clipBox.min.y + clipBox.max.y) * 0.5;
+      cap = Math.min(cap, (cy - clip.y) / halfY, (clip.y + clip.h - cy) / halfY);
+    }
+    return Math.max(Math.min(cap, 4), 1);
   }
 
   function addFloorSpill(
@@ -801,7 +935,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     length: number,
     dir: number,
     hex: number,
-    opacity: number
+    opacity: number,
+    clip: Rect | null = null
   ): THREE.Mesh {
     const geometry = track(new THREE.PlaneGeometry(length, width, 12, 2));
     paintPlane(
@@ -818,10 +953,17 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     mesh.rotation.x = -Math.PI * 0.5;
     mesh.position.set(x + (dir * length) * 0.5, floorY + 0.012, 0.15);
     group.add(mesh);
-    return mesh;
+    return fitToClip(mesh, clip);
   }
 
-  function addPoolSpill(x: number, floorY: number, radius: number, hex: number, opacity: number): void {
+  function addPoolSpill(
+    x: number,
+    floorY: number,
+    radius: number,
+    hex: number,
+    opacity: number,
+    clip: Rect | null = null
+  ): THREE.Mesh {
     const geometry = track(new THREE.CircleGeometry(radius, 24));
     radialFalloff(geometry);
     const mesh = new THREE.Mesh(geometry, spillMaterial(hex, opacity));
@@ -829,6 +971,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     mesh.scale.set(1, 0.42, 1);
     mesh.position.set(x, floorY + 0.012, 0.1);
     group.add(mesh);
+    return fitToClip(mesh, clip);
   }
 
   function addWallGlow(
@@ -838,7 +981,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     h: number,
     z: number,
     hex: number,
-    opacity: number
+    opacity: number,
+    clip: Rect | null = null
   ): THREE.Mesh {
     const geometry = track(new THREE.CircleGeometry(1, 24));
     radialFalloff(geometry);
@@ -846,18 +990,44 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     mesh.scale.set(w * 0.5, h * 0.5, 1);
     mesh.position.set(x, y, z);
     group.add(mesh);
+    return fitToClip(mesh, clip);
+  }
+
+  function addOrb(
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+    hex: number,
+    opacity: number,
+    parent: THREE.Object3D = group
+  ): THREE.Mesh {
+    const material = haloMaterial(hex);
+    material.opacity = Math.min(Math.max(opacity, 0), 1);
+    const size = Math.max(radius, 0.05) * 2;
+    const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(size, size)), material);
+    mesh.position.set(x, y, z);
+    mesh.renderOrder = 3;
+    mesh.layers.set(ACTOR_LAYER);
+    parent.add(mesh);
     return mesh;
   }
 
-  function registerDoorGlow(mesh: THREE.Mesh): void {
+  function registerDoorGlow(mesh: THREE.Mesh, clip: Rect | null = null, lengthOnly = false): void {
     const material = mesh.material as THREE.MeshBasicMaterial;
     doorGlows.push({
       material,
       opacity: material.opacity,
       mesh,
       scaleX: mesh.scale.x,
-      scaleY: mesh.scale.y
+      scaleY: mesh.scale.y,
+      grow: growLimit(mesh, clip),
+      lengthOnly
     });
+  }
+
+  function registerDoorPanel(material: THREE.MeshBasicMaterial): void {
+    doorPanels.push({ material, base: material.color.clone() });
   }
 
   function registerDoorLight(light: THREE.PointLight | null): void {
@@ -1150,6 +1320,32 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     }
   }
 
+  function punchRect(piece: Rect, hole: Rect): Rect[] {
+    const x0 = Math.max(piece.x, hole.x);
+    const x1 = Math.min(piece.x + piece.w, hole.x + hole.w);
+    const y0 = Math.max(piece.y, hole.y);
+    const y1 = Math.min(piece.y + piece.h, hole.y + hole.h);
+    if (x1 - x0 <= 0.02 || y1 - y0 <= 0.02) return [piece];
+    const out: Rect[] = [];
+    if (y0 - piece.y > 0.02) out.push({ x: piece.x, y: piece.y, w: piece.w, h: y0 - piece.y });
+    if (piece.y + piece.h - y1 > 0.02) out.push({ x: piece.x, y: y1, w: piece.w, h: piece.y + piece.h - y1 });
+    if (x0 - piece.x > 0.02) out.push({ x: piece.x, y: y0, w: x0 - piece.x, h: y1 - y0 });
+    if (piece.x + piece.w - x1 > 0.02) out.push({ x: x1, y: y0, w: piece.x + piece.w - x1, h: y1 - y0 });
+    return out;
+  }
+
+  function punchOpenings(source: Rect, holes: Rect[]): Rect[] {
+    let pieces: Rect[] = [source];
+    for (const hole of holes) {
+      const next: Rect[] = [];
+      for (const piece of pieces) {
+        for (const part of punchRect(piece, hole)) next.push(part);
+      }
+      pieces = next;
+    }
+    return pieces;
+  }
+
   function addWall(decor: Decor, solids: Rect[], feel: Feel): void {
     const z = decor.z;
     const far = z <= FAR_Z;
@@ -1158,20 +1354,16 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const masses: Rect[] = [];
     const hatches: Opening[] = [];
     for (const source of solids.length > 0 ? solids : [decor.rect]) {
-      const cuts = decor.z === 0
-        ? currentOpenings.filter((o) => (o.side === "ceiling" || o.side === "floor") && rectsTouch(o.rect, source, 0.05) && o.rect.y >= source.y - 0.05 && o.rect.y + o.rect.h <= source.y + source.h + 0.05)
-        : [];
-      if (cuts.length === 0) {
-        masses.push(source);
-        continue;
+      const holes = currentOpenings.filter((o) => rectsTouch(o.rect, source, -0.04));
+      if (decor.z === 0) {
+        for (const hole of holes) {
+          if (hole.side !== "ceiling" && hole.side !== "floor") continue;
+          if (hole.rect.y < source.y - 0.05) continue;
+          if (hole.rect.y + hole.rect.h > source.y + source.h + 0.05) continue;
+          hatches.push(hole);
+        }
       }
-      let cursor = source.x;
-      for (const cut of cuts.slice().sort((p, q) => p.rect.x - q.rect.x)) {
-        if (cut.rect.x > cursor + 0.02) masses.push({ x: cursor, y: source.y, w: cut.rect.x - cursor, h: source.h });
-        cursor = cut.rect.x + cut.rect.w;
-        hatches.push(cut);
-      }
-      if (source.x + source.w > cursor + 0.02) masses.push({ x: cursor, y: source.y, w: source.x + source.w - cursor, h: source.h });
+      for (const piece of punchOpenings(source, holes.map((o) => o.rect))) masses.push(piece);
     }
     for (const mass of masses) {
       addRect(mass, depth, z, far ? farMat : wallMat, group, !far);
@@ -1378,15 +1570,20 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     addBox(lw * 0.6, 0.12, lw * 0.6, lampX, lanternTop + 0.08, z, ironDarkMat, group, true);
     addBox(lw + 0.06, 0.07, lw + 0.06, lampX, lanternTop - lh, z, ironDarkMat, group, true);
     const glass = transient(new THREE.MeshBasicMaterial({ color: ramp.amber, fog: false }));
-    addBox(lw, lh - 0.1, lw * 0.9, lampX, ly, z, glass, group);
+    addBox(lw, lh - 0.1, lw * 0.9, lampX, ly, z, glass, group).layers.set(ACTOR_LAYER);
     const edges = [lampX - lw * 0.5, lampX + lw * 0.5];
     for (const ex of edges) addBox(0.05, lh, 0.05, ex, ly, z + lw * 0.46, ironDarkMat, group);
     addBox(0.05, lh, 0.05, lampX, ly, z + lw * 0.46, ironDarkMat, group);
     const flameMat = transient(new THREE.MeshBasicMaterial({ color: ramp.porcelain, fog: false }));
-    addBox(0.1, 0.2, 0.1, lampX, ly - 0.05, z + lw * 0.2, flameMat, group);
-    const light = addFlameLight(ramp.amber, feel.lampLightIntensity, feel.lampLightDistance, lampX, ly, z + 0.9);
-    addPoolSpill(lampX, rect.y, 2.4, ramp.amber, feel.passageSpillOpacity * 0.8);
-    addWallGlow(lampX, ly - 0.3, 3.0, 3.6, z - 0.35, ramp.amber, feel.passageSpillOpacity * 0.22);
+    addBox(0.1, 0.2, 0.1, lampX, ly - 0.05, z + lw * 0.2, flameMat, group).layers.set(ACTOR_LAYER);
+    addOrb(lampX, ly, z + lw * 0.5, feel.lampHaloRadius, ramp.amber, feel.lampHaloOpacity);
+    const light = addFlameLight(ramp.amber, feel.lampLightIntensity, feel.lampLightDistance, lampX, ly, z + 0.9, LIGHT_PRIORITY_KEY);
+    if (light !== null) {
+      registerActorLight(light);
+      ownedActorLights.push(light);
+    }
+    addPoolSpill(lampX, rect.y, 2.4, ramp.amber, feel.passageSpillOpacity * 0.8, roomClip);
+    addWallGlow(lampX, ly - 0.3, 3.0, 3.6, z - 0.35, ramp.amber, feel.passageSpillOpacity * 0.22, roomClip);
     flames.push({ material: glass, base: new THREE.Color(ramp.amber), light, lightBase: feel.lampLightIntensity, phase: lampX, amount: 0.12, furnace: false });
   }
 
@@ -1603,7 +1800,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       addBox(0.06, mouthH, 0.08, cx - mouthW * 0.5 + ((i + 1) / (bars + 1)) * mouthW, mouthY, front - 0.04, ironDarkMat, group);
     }
     addRivets(cx, mouthY, mouthW + 0.3, mouthH + 0.26, front + 0.1, group, ironMat);
-    const light = addFlameLight(ramp.amber, feel.furnaceLightIntensity * strength, feel.furnaceLightDistance, cx, mouthY, front + 0.8);
+    const light = addFlameLight(ramp.amber, feel.furnaceLightIntensity * strength, feel.furnaceLightDistance, cx, mouthY, front + 0.8, LIGHT_PRIORITY_FURNACE);
     addWallGlow(cx, mouthY, rect.w * 2.4, rect.h * 1.6, front + 0.12, ramp.amber, feel.decorGlowOpacity * 0.6 * strength);
     flames.push({ material: mouthMat, base: new THREE.Color(ramp.amber), light, lightBase: feel.furnaceLightIntensity * strength, phase: cx * 0.6, amount: feel.furnacePulseAmount, furnace: true });
   }
@@ -1683,7 +1880,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       feel.jarLightDistance,
       cx,
       coreY,
-      z + 0.6
+      z + 0.6,
+      LIGHT_PRIORITY_JAR
     );
     jars.push({
       core: coreMat,
@@ -1812,8 +2010,247 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       Math.max(rect.h, rect.w) * 1.6,
       cx,
       rect.y + rect.h * 0.84,
-      z + 0.9
+      z + 0.9,
+      LIGHT_PRIORITY_REST
     );
+  }
+
+  function addConduit(decor: Decor, feel: Feel): void {
+    const rect = decor.rect;
+    const z = decor.z;
+    const far = z <= FAR_Z;
+    const horizontal = rect.w >= rect.h;
+    const length = Math.max(horizontal ? rect.w : rect.h, 0.5);
+    const radius = Math.max(Math.min(horizontal ? rect.h : rect.w, 0.7) * 0.5, 0.08);
+    const cx = rect.x + rect.w * 0.5;
+    const cy = rect.y + rect.h * 0.5;
+    const hex = decor.color === undefined ? ramp.amber : decor.color;
+    const strength = decor.intensity === undefined ? 1 : decor.intensity;
+    const sides = far ? 8 : 14;
+
+    const glass = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(radius, radius, length, sides, 1, true)),
+      far ? farMat : glassMaterial(Math.min(feel.lensOpacity * 1.3, 0.8))
+    );
+    glass.position.set(cx, cy, z);
+    if (horizontal) glass.rotation.z = Math.PI * 0.5;
+    glass.renderOrder = 2;
+    group.add(glass);
+
+    const collarGeo = track(
+      new THREE.CylinderGeometry(radius * 1.3, radius * 1.3, radius * 0.5, sides)
+    );
+    const brackets = Math.max(2, Math.round(length / 2.4) + 1);
+    for (let i = 0; i < brackets; i++) {
+      const off = -length * 0.5 + ((i + 0.5) / brackets) * length;
+      const bx = horizontal ? cx + off : cx;
+      const by = horizontal ? cy : cy + off;
+      const collar = new THREE.Mesh(collarGeo, far ? farLitMat : ironMat);
+      collar.position.set(bx, by, z);
+      if (horizontal) collar.rotation.z = Math.PI * 0.5;
+      group.add(collar);
+      if (far) continue;
+      addBox(radius * 0.7, radius * 0.7, 0.9, bx, by, z - 0.5, ironDarkMat, group, true);
+      if (horizontal) {
+        addBox(radius * 3.0, radius * 0.34, 0.22, bx, by - radius * 1.5, z, ironMat, group, true);
+      } else {
+        addBox(radius * 0.34, radius * 3.0, 0.22, bx - radius * 1.5, by, z, ironMat, group, true);
+      }
+    }
+
+    const endGeo = track(new THREE.CylinderGeometry(radius * 1.55, radius * 1.55, 0.18, sides));
+    for (const off of [-length * 0.5 + 0.09, length * 0.5 - 0.09]) {
+      const flange = new THREE.Mesh(endGeo, far ? farLitMat : ironMat);
+      flange.position.set(horizontal ? cx + off : cx, horizontal ? cy : cy + off, z);
+      if (horizontal) flange.rotation.z = Math.PI * 0.5;
+      group.add(flange);
+    }
+
+    if (far) return;
+
+    const coreMat = transient(new THREE.MeshBasicMaterial({ color: hex, fog: false }));
+    const core = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(radius * 0.46, radius * 0.46, length - 0.22, 10)),
+      coreMat
+    );
+    core.position.set(cx, cy, z);
+    if (horizontal) core.rotation.z = Math.PI * 0.5;
+    core.renderOrder = 1;
+    group.add(core);
+
+    const bandMat = transient(
+      new THREE.MeshBasicMaterial({
+        color: hex,
+        fog: false,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    const bandGeo = track(
+      new THREE.CylinderGeometry(radius * 0.8, radius * 0.8, Math.min(length * 0.2, 1.0), 12)
+    );
+    const bands: THREE.Object3D[] = [];
+    const offsets: number[] = [];
+    const count = 3;
+    for (let i = 0; i < count; i++) {
+      const band = new THREE.Mesh(bandGeo, bandMat);
+      band.position.set(cx, cy, z);
+      if (horizontal) band.rotation.z = Math.PI * 0.5;
+      band.renderOrder = 3;
+      group.add(band);
+      bands.push(band);
+      offsets.push((i / count) * length);
+    }
+
+    const lightBase = feel.conduitLightIntensity * strength;
+    const light = addFlameLight(hex, lightBase, feel.conduitLightDistance, cx, cy, z + 0.5, LIGHT_PRIORITY_CONDUIT);
+
+    conduits.push({
+      bands,
+      offsets,
+      axis: horizontal ? "x" : "y",
+      start: horizontal ? cx - length * 0.5 : cy - length * 0.5,
+      length,
+      core: coreMat,
+      band: bandMat,
+      base: new THREE.Color(hex),
+      light,
+      lightBase,
+      phase: (Math.abs(cx) * 1.31 + Math.abs(cy) * 2.17) % (Math.PI * 2)
+    });
+  }
+
+  function addShutter(decor: Decor, room: Room, feel: Feel): void {
+    const rect = decor.rect;
+    const z = decor.z;
+    const cx = rect.x + rect.w * 0.5;
+    const cy = rect.y + rect.h * 0.5;
+    const radius = Math.max(Math.min(rect.w, rect.h), 0.8) * 0.5;
+    const hex = decor.color === undefined ? ramp.amber : decor.color;
+    const plateD = Math.max(feel.gateDepth, 0.3) * 0.4;
+
+    const sealed = new THREE.Group();
+    sealed.position.set(cx, cy, z);
+    group.add(sealed);
+    const open = new THREE.Group();
+    open.position.set(cx, cy, z);
+    open.visible = false;
+    group.add(open);
+
+    const rimGeo = track(new THREE.TorusGeometry(radius, radius * 0.08, 6, 30));
+    for (const holder of [sealed, open]) {
+      const rim = new THREE.Mesh(rimGeo, rimMat);
+      rim.position.set(0, 0, plateD * 0.5);
+      holder.add(rim);
+      const collar = new THREE.Mesh(
+        track(new THREE.CylinderGeometry(radius * 1.08, radius * 1.14, plateD * 0.8, 30, 1, true)),
+        ironDarkMat
+      );
+      collar.rotation.x = Math.PI * 0.5;
+      holder.add(collar);
+    }
+
+    const disc = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(radius * 0.99, radius * 0.99, plateD, 30)),
+      ironDarkMat
+    );
+    disc.rotation.x = Math.PI * 0.5;
+    sealed.add(disc);
+
+    const ribs = 8;
+    const ribGeo = track(new THREE.BoxGeometry(radius * 0.86, radius * 0.17, plateD * 0.9));
+    const stubGeo = track(new THREE.BoxGeometry(radius * 0.24, radius * 0.17, plateD * 0.9));
+    const rayGeo = track(new THREE.BoxGeometry(radius * 0.3, radius * 0.08, plateD * 0.5));
+    for (let i = 0; i < ribs; i++) {
+      const a = (i / ribs) * Math.PI * 2;
+      const rib = new THREE.Mesh(ribGeo, ironMat);
+      rib.position.set(Math.cos(a) * radius * 0.52, Math.sin(a) * radius * 0.52, plateD * 0.6);
+      rib.rotation.z = a;
+      sealed.add(rib);
+      const stub = new THREE.Mesh(stubGeo, ironMat);
+      stub.position.set(Math.cos(a) * radius * 0.85, Math.sin(a) * radius * 0.85, plateD * 0.6);
+      stub.rotation.z = a;
+      open.add(stub);
+      const ray = new THREE.Mesh(rayGeo, rimMat);
+      ray.position.set(Math.cos(a) * radius * 0.42, Math.sin(a) * radius * 0.42, plateD * 0.95);
+      ray.rotation.z = a;
+      sealed.add(ray);
+    }
+
+    const hub = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(radius * 0.25, radius * 0.25, plateD * 1.3, 18)),
+      ironMat
+    );
+    hub.rotation.x = Math.PI * 0.5;
+    hub.position.set(0, 0, plateD * 0.4);
+    sealed.add(hub);
+    const eye = new THREE.Mesh(
+      track(new THREE.CircleGeometry(radius * 0.15, 18)),
+      transient(new THREE.MeshBasicMaterial({ color: shadeOf(hex, 0.45), fog: false }))
+    );
+    eye.position.set(0, 0, plateD * 1.06);
+    sealed.add(eye);
+
+    const rivets = 14;
+    const rivetGeo = track(new THREE.BoxGeometry(radius * 0.09, radius * 0.09, radius * 0.09));
+    for (let i = 0; i < rivets; i++) {
+      const a = ((i + 0.5) / rivets) * Math.PI * 2;
+      const rivet = new THREE.Mesh(rivetGeo, rimMat);
+      rivet.position.set(Math.cos(a) * radius * 0.9, Math.sin(a) * radius * 0.9, plateD * 0.7);
+      sealed.add(rivet);
+    }
+
+    const seam = new THREE.Mesh(
+      track(new THREE.CircleGeometry(radius * 1.55, 30)),
+      spillMaterial(hex, feel.passageSpillOpacity * 0.7)
+    );
+    radialFalloff(seam.geometry);
+    seam.position.set(0, 0, -plateD * 1.2);
+    sealed.add(seam);
+    fitToClip(seam, roomClip);
+    const ring = new THREE.Mesh(
+      track(new THREE.TorusGeometry(radius * 0.93, radius * 0.045, 6, 30)),
+      amberDimMat
+    );
+    ring.position.set(0, 0, plateD * 0.9);
+    sealed.add(ring);
+
+    const iris = new THREE.Mesh(
+      track(new THREE.CircleGeometry(radius * 0.82, 30)),
+      transient(new THREE.MeshBasicMaterial({ color: hex, fog: false }))
+    );
+    iris.position.set(0, 0, -plateD * 0.2);
+    open.add(iris);
+    const haloMat = haloMaterial(hex);
+    haloMat.opacity = Math.min(feel.passageSpillOpacity * 1.4, 1);
+    const halo = new THREE.Mesh(
+      track(new THREE.PlaneGeometry(Math.max(rect.w, 0.3), Math.max(rect.h, 0.3))),
+      haloMat
+    );
+    halo.position.set(0, 0, plateD * 1.4);
+    halo.renderOrder = 3;
+    open.add(halo);
+    fitToClip(halo, roomClip);
+    const pool = new THREE.Mesh(
+      track(new THREE.CircleGeometry(radius * 2.2, 24)),
+      spillMaterial(hex, feel.passageSpillOpacity * 0.9)
+    );
+    radialFalloff(pool.geometry);
+    pool.rotation.x = -Math.PI * 0.5;
+    pool.scale.set(1, 0.4, 1);
+    pool.position.set(0, -cy + rect.y + 0.02, 0.6);
+    open.add(pool);
+    fitToClip(pool, roomClip);
+
+    let gateId: string | null = null;
+    for (const gate of room.gates) {
+      if (!rectsTouch(gate.rect, rect, 0.9)) continue;
+      gateId = gate.id;
+      break;
+    }
+    if (gateId !== null) shutters.push({ id: gateId, sealed, open });
   }
 
   function addShaft(decor: Decor, feel: Feel): void {
@@ -1964,7 +2401,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const cx = decor.rect.x + decor.rect.w * 0.5;
     const cy = decor.rect.y + decor.rect.h * 0.5;
     addWallGlow(cx, cy, size * 1.5, size * 1.5, decor.z, hex, feel.decorGlowOpacity * strength);
-    if (decor.z > FAR_Z) addFlameLight(hex, feel.decorGlowIntensity * strength, size * 6, cx, cy, decor.z + 0.5);
+    if (decor.z > FAR_Z) addFlameLight(hex, feel.decorGlowIntensity * strength, size * 6, cx, cy, decor.z + 0.5, LIGHT_PRIORITY_REST);
   }
 
   function buildEmbers(rects: Decor[], density: number, feel: Feel): void {
@@ -2088,6 +2525,12 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       case "sunlight":
         addSunlight(decor, feel);
         return;
+      case "conduit":
+        addConduit(decor, feel);
+        return;
+      case "shutter":
+        addShutter(decor, room, feel);
+        return;
       case "boiler":
         addBoiler(decor, feel);
         return;
@@ -2149,6 +2592,9 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
   function classifyOpening(door: Door, room: Room, walls: Rect[], slabs: Rect[]): Opening | null {
     const b = room.bounds;
     const warm = WARM_TARGETS[door.to] === true;
+    const tone: PassageTone = warm ? "warm" : PALE_TARGETS[door.to] === true ? "pale" : "ash";
+    let best: Opening | null = null;
+    let bestScore = -Infinity;
     for (const wall of walls) {
       if (!rectsTouch(door.rect, wall, 0.05)) continue;
       const rightWall = wall.x >= b.x + b.w - 0.01;
@@ -2156,22 +2602,35 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       const floor = wall.y + wall.h <= b.y + 0.01;
       const ceiling = wall.y >= b.y + b.h - 0.01;
       if (rightWall || leftWall) {
-        return {
+        const overlap =
+          Math.min(door.rect.x + door.rect.w, wall.x + wall.w) - Math.max(door.rect.x, wall.x);
+        const score = overlap + 0.06;
+        if (score <= bestScore) continue;
+        bestScore = score;
+        best = {
           door,
           rect: { x: wall.x, y: door.rect.y, w: wall.w, h: door.rect.h },
           side: rightWall ? "right" : "left",
-          warm
+          warm,
+          tone
         };
+        continue;
       }
       if (floor || ceiling) {
-        return {
+        const overlap =
+          Math.min(door.rect.y + door.rect.h, wall.y + wall.h) - Math.max(door.rect.y, wall.y);
+        if (overlap <= bestScore) continue;
+        bestScore = overlap;
+        best = {
           door,
           rect: { x: door.rect.x, y: wall.y, w: door.rect.w, h: wall.h },
           side: floor ? "floor" : "ceiling",
-          warm
+          warm,
+          tone
         };
       }
     }
+    if (best !== null) return best;
     for (const slab of slabs) {
       if (!rectsTouch(door.rect, slab, 0.05)) continue;
       if (door.rect.x < slab.x - 0.05 || door.rect.x + door.rect.w > slab.x + slab.w + 0.05) continue;
@@ -2180,10 +2639,17 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
         door,
         rect: { x: door.rect.x, y: slab.y, w: door.rect.w, h: slab.h },
         side: above ? "ceiling" : "floor",
-        warm
+        warm,
+        tone
       };
     }
     return null;
+  }
+
+  function toneHex(tone: PassageTone): number {
+    if (tone === "warm") return ramp.amber;
+    if (tone === "pale") return PALE_SPILL;
+    return ramp.ash;
   }
 
   function addSidePassage(opening: Opening, feel: Feel, arched: boolean): void {
@@ -2195,31 +2661,48 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const dir = right ? 1 : -1;
     const cx = rect.x + rect.w * 0.5;
     const cy = rect.y + rect.h * 0.5;
-    const hex = opening.warm ? ramp.amber : ramp.ash;
-    const glowHex = opening.warm ? ramp.amber : shadeOf(ramp.ash, 1.15);
+    const tone = opening.tone;
+    const hex = toneHex(tone);
+    const glowHex = tone === "warm" ? ramp.amber : shadeOf(hex, 1.15);
+    const interior = Math.max(feel.passageInteriorDepth, 0.2);
+    const lift = Math.max(feel.passageFrameLift, 0);
+    const backZ = -depth * 0.5 - interior;
+    const revealLen = depth + interior;
+    const revealZ = -interior * 0.5;
 
-    const back = track(new THREE.PlaneGeometry(rect.w, rect.h, 8, 2));
-    paintPlane(back, new THREE.Color(ramp.void), new THREE.Color(hex).multiplyScalar(opening.warm ? 0.7 : 0.9), "x", 1.4);
-    if (!right) back.rotateY(Math.PI).rotateY(Math.PI);
+    const nearC =
+      tone === "pale" ? new THREE.Color(roomFogHex).multiplyScalar(0.34) : new THREE.Color(ramp.void);
+    const farC =
+      tone === "pale"
+        ? new THREE.Color(roomFogHex).lerp(new THREE.Color(PALE_SPILL), 0.55)
+        : new THREE.Color(hex).multiplyScalar(tone === "warm" ? 0.7 : 0.42);
+
+    const sealed = sealedOpenings.has(opening);
+    const back = track(new THREE.PlaneGeometry(rect.w + 0.06, rect.h, 8, 2));
+    paintPlane(back, nearC, farC, "x", 1.4);
     if (!right) back.scale(-1, 1, 1);
-    const backMesh = new THREE.Mesh(back, gradientMat);
-    backMesh.position.set(cx, cy, -depth * 0.5 + 0.03);
+    const backMat = sealed
+      ? transient(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }))
+      : gradientMat;
+    const backMesh = new THREE.Mesh(back, backMat);
+    backMesh.position.set(cx, cy, backZ);
     group.add(backMesh);
+    if (sealed) registerDoorPanel(backMat);
 
-    const floor = track(new THREE.PlaneGeometry(rect.w, depth, 8, 2));
-    paintPlane(floor, new THREE.Color(ramp.charcoal), new THREE.Color(hex).multiplyScalar(0.75), "x", 1.3);
+    const floor = track(new THREE.PlaneGeometry(rect.w, revealLen, 8, 2));
+    paintPlane(floor, new THREE.Color(ramp.charcoal).multiplyScalar(0.7), farC.clone().multiplyScalar(0.8), "x", 1.3);
     if (!right) floor.scale(-1, 1, 1);
     const floorMesh = new THREE.Mesh(floor, gradientMat);
     floorMesh.rotation.x = -Math.PI * 0.5;
-    floorMesh.position.set(cx, rect.y + 0.02, 0);
+    floorMesh.position.set(cx, rect.y + 0.02, revealZ);
     group.add(floorMesh);
 
-    const ceiling = track(new THREE.PlaneGeometry(rect.w, depth, 8, 2));
-    paintPlane(ceiling, new THREE.Color(ramp.void), new THREE.Color(ramp.charcoal), "x", 1.5);
+    const ceiling = track(new THREE.PlaneGeometry(rect.w, revealLen, 8, 2));
+    paintPlane(ceiling, new THREE.Color(ramp.void), nearC.clone().lerp(farC, 0.35), "x", 1.5);
     if (!right) ceiling.scale(-1, 1, 1);
     const ceilingMesh = new THREE.Mesh(ceiling, gradientMat);
     ceilingMesh.rotation.x = Math.PI * 0.5;
-    ceilingMesh.position.set(cx, rect.y + rect.h - 0.02, 0);
+    ceilingMesh.position.set(cx, rect.y + rect.h - 0.02, revealZ);
     group.add(ceilingMesh);
 
     const veil = veilByOpening.get(opening);
@@ -2228,29 +2711,51 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const frameLit = veil === undefined ? stoneLitMat : veil.stoneLit;
     if (veil !== undefined) outlineOverride = veil.outline;
 
-    const sill = addBox(rect.w + 0.4, 0.07, depth + 0.16, cx - dir * 0.2, rect.y + 0.035, 0, frameLit, group, true);
-    sill.renderOrder = 1;
-
+    const frameD = depth + 0.16 + lift * 2;
+    const frameZ = lift;
     const jambW = 0.42;
-    addBox(jambW, rect.h + 0.05, depth + 0.16, innerX + dir * jambW * 0.5, cy, 0, frameStone, group, true);
-    addBox(jambW * 0.7, rect.h + 0.05, depth + 0.1, outerX - dir * jambW * 0.35, cy, 0, frameDark, group, true);
+
+    addBox(rect.w + 0.7, 0.16, frameD + 0.12, cx - dir * 0.14, rect.y + 0.08, frameZ, frameStone, group, true);
+    const sill = addBox(rect.w + 0.86, 0.08, frameD + 0.2, cx - dir * 0.18, rect.y + 0.19, frameZ, frameLit, group, true);
+    sill.renderOrder = 1;
+    addBox(rect.w + 0.5, 0.06, frameD + 0.26, cx - dir * 0.1, rect.y + 0.245, frameZ, frameDark, group);
+
+    addBox(jambW, rect.h + 0.05, frameD, innerX + dir * jambW * 0.5, cy, frameZ, frameStone, group, true);
+    addBox(jambW * 0.7, rect.h + 0.05, frameD - 0.06, outerX - dir * jambW * 0.35, cy, frameZ, frameDark, group, true);
+    addBox(0.16, rect.h + 0.05, frameD + 0.16, innerX + dir * 0.08, cy, frameZ, frameLit, group, true);
+    for (const jx of [innerX + dir * jambW * 0.5, outerX - dir * jambW * 0.35]) {
+      addBox(jambW * 1.28, 0.3, frameD + 0.14, jx, rect.y + 0.42, frameZ, frameDark, group, true);
+      addBox(jambW * 1.28, 0.26, frameD + 0.14, jx, rect.y + rect.h - 0.15, frameZ, frameDark, group, true);
+    }
 
     if (arched) {
       const radius = rect.w * 0.5;
-      addArchStones(cx, rect.y + rect.h - 0.02, radius, 0.5, depth + 0.16, 0, frameStone, group);
-      addBox(rect.w + 1.2, 0.36, depth + 0.16, cx, rect.y + rect.h + radius + 0.62, 0, frameDark, group, true);
+      addArchStones(cx, rect.y + rect.h - 0.02, radius, 0.5, frameD, frameZ, frameStone, group);
+      addBox(rect.w + 1.2, 0.36, frameD, cx, rect.y + rect.h + radius + 0.62, frameZ, frameDark, group, true);
     } else {
-      addBox(rect.w + jambW * 1.6, 0.62, depth + 0.16, cx, rect.y + rect.h + 0.31, 0, frameStone, group, true);
-      addBox(0.7, 0.72, depth + 0.22, cx, rect.y + rect.h + 0.36, 0, frameLit, group, true);
-      addBox(rect.w + jambW * 2.2, 0.22, depth + 0.1, cx, rect.y + rect.h + 0.73, 0, frameDark, group, true);
+      addBox(rect.w + jambW * 1.6, 0.62, frameD, cx, rect.y + rect.h + 0.31, frameZ, frameStone, group, true);
+      addBox(0.7, 0.86, frameD + 0.1, cx, rect.y + rect.h + 0.4, frameZ, frameLit, group, true);
+      addBox(0.42, 0.24, frameD + 0.18, cx, rect.y + rect.h + 0.1, frameZ, frameDark, group, true);
+      addBox(rect.w + jambW * 2.2, 0.22, frameD - 0.06, cx, rect.y + rect.h + 0.83, frameZ, frameDark, group, true);
     }
     outlineOverride = null;
 
-    const spill = addFloorSpill(innerX, rect.y, Math.min(rect.w * 2.1, depth - 0.1), feel.passageSpillLength, -dir, glowHex, feel.passageSpillOpacity * 0.9);
-    const wallGlow = addWallGlow(cx - dir * 0.2, cy, rect.w * 1.6, rect.h * 1.15, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * (opening.warm ? 0.9 : 0.6));
+    const recessClip: Rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+    const spill = addFloorSpill(innerX, rect.y, Math.min(rect.w * 2.1, depth - 0.1), feel.passageSpillLength, -dir, glowHex, feel.passageSpillOpacity * (tone === "ash" ? 0.6 : 0.9), roomClip);
+    const wallGlow = addWallGlow(cx - dir * 0.2, cy, rect.w * 1.6, rect.h * 1.15, backZ + 0.3, glowHex, feel.passageSpillOpacity * (tone === "warm" ? 0.9 : tone === "pale" ? 1.5 : 0.9), recessClip);
+    addWallGlow(innerX - dir * 0.3, rect.y + rect.h * 0.62, rect.w * 1.1, rect.h * 0.9, depth * 0.5 + lift * 2 + 0.06, glowHex, feel.passageSpillOpacity * 0.32, roomClip);
+    addJambLamp(opening, feel);
     let passageLight: THREE.PointLight | null = null;
-    if (feel.passageLightIntensity > 0 && opening.warm) {
-      passageLight = addFlameLight(hex, feel.passageLightIntensity, feel.passageLightDistance, innerX - dir * 0.2, cy, 0.4);
+    if (feel.passageLightIntensity > 0 && tone !== "ash") {
+      passageLight = addFlameLight(
+        hex,
+        feel.passageLightIntensity * (tone === "warm" ? 1 : 0.55),
+        feel.passageLightDistance,
+        innerX - dir * 0.2,
+        cy,
+        0.4,
+        LIGHT_PRIORITY_KEY
+      );
     }
     if (veil !== undefined) {
       const spillMat = spill.material as THREE.MeshBasicMaterial;
@@ -2266,11 +2771,53 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
         passageLight.intensity = 0;
       }
     }
-    if (sealedOpenings.has(opening)) {
-      registerDoorGlow(spill);
-      registerDoorGlow(wallGlow);
+    if (sealed) {
+      registerDoorGlow(spill, roomClip, true);
       registerDoorLight(passageLight);
     }
+  }
+
+  function addJambLamp(opening: Opening, feel: Feel): void {
+    const rect = opening.rect;
+    const right = opening.side === "right";
+    const dir = right ? 1 : -1;
+    const innerX = right ? rect.x : rect.x + rect.w;
+    const depth = feel.solidDepth;
+    const warm = opening.tone !== "pale";
+    const hex = warm ? ramp.amber : PALE_SPILL;
+    const postX = innerX - dir * 0.52;
+    const headY = rect.y + Math.min(rect.h * 0.78, rect.h - 0.4);
+    const front = depth * 0.5 + 0.12;
+
+    addBox(0.1, 0.34, 0.12, postX, headY + 0.28, front, ironDarkMat, group, true);
+    addBox(0.26, 0.09, 0.26, postX, headY + 0.1, front, ironDarkMat, group, true);
+    const glassMat = transient(new THREE.MeshBasicMaterial({ color: hex, fog: false }));
+    addBox(0.2, 0.26, 0.2, postX, headY - 0.06, front, glassMat, group).layers.set(ACTOR_LAYER);
+    addBox(0.26, 0.07, 0.26, postX, headY - 0.22, front, ironDarkMat, group, true);
+    addOrb(postX, headY - 0.06, front + 0.1, JAMB_ORB_RADIUS, hex, feel.lampHaloOpacity);
+
+    const beadMat = transient(
+      new THREE.MeshBasicMaterial({
+        color: ramp.porcelain,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false
+      })
+    );
+    const bead = addBox(0.07, rect.h - 0.12, 0.07, innerX - dir * 0.035, rect.y + rect.h * 0.5, front - 0.02, beadMat, group);
+    bead.renderOrder = 2;
+    addPoolSpill(postX, rect.y, 1.9, hex, feel.passageSpillOpacity * 0.55, roomClip);
+    flames.push({
+      material: glassMat,
+      base: new THREE.Color(hex),
+      light: null,
+      lightBase: 0,
+      phase: postX * 1.7,
+      amount: 0.1,
+      furnace: false
+    });
   }
 
   function addVerticalPassage(opening: Opening, room: Room, feel: Feel): void {
@@ -2279,8 +2826,8 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     const depth = feel.solidDepth;
     const cx = rect.x + rect.w * 0.5;
     const cy = rect.y + rect.h * 0.5;
-    const hex = opening.warm ? ramp.amber : ramp.ash;
-    const glowHex = opening.warm ? ramp.amber : shadeOf(ramp.ash, 1.15);
+    const hex = toneHex(opening.tone);
+    const glowHex = opening.tone === "warm" ? ramp.amber : shadeOf(hex, 1.15);
     const back = track(new THREE.PlaneGeometry(rect.w, rect.h, 2, 8));
     paintPlane(back, new THREE.Color(ramp.void), new THREE.Color(hex).multiplyScalar(0.8), "y", 1.3);
     if (!up) back.scale(1, -1, 1);
@@ -2309,10 +2856,11 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       const shaftMesh = new THREE.Mesh(shaft, spillMaterial(glowHex, feel.passageSpillOpacity * 0.55));
       shaftMesh.position.set(cx, ladderBottom + shaftH * 0.5, -depth * 0.5 + 0.5);
       group.add(shaftMesh);
-      addPoolSpill(cx, ladderBottom, rect.w * 1.6, glowHex, feel.passageSpillOpacity * 0.9);
-      addWallGlow(cx, rect.y + 0.2, rect.w * 2.2, 1.6, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * 0.7);
+      fitToClip(shaftMesh, roomClip);
+      addPoolSpill(cx, ladderBottom, rect.w * 1.6, glowHex, feel.passageSpillOpacity * 0.9, roomClip);
+      addWallGlow(cx, rect.y + 0.2, rect.w * 2.2, 1.6, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * 0.7, roomClip);
     } else {
-      addWallGlow(cx, rect.y + rect.h - 0.3, rect.w * 2.0, 1.4, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * 0.5);
+      addWallGlow(cx, rect.y + rect.h - 0.3, rect.w * 2.0, 1.4, -depth * 0.5 + 0.4, glowHex, feel.passageSpillOpacity * 0.5, roomClip);
     }
   }
 
@@ -2325,7 +2873,7 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
     addBox(0.4, rect.h, depth, rect.x - 0.2, cy, 0, stoneMat, group, true);
     addBox(0.4, rect.h, depth, rect.x + rect.w + 0.2, cy, 0, stoneMat, group, true);
     addBox(rect.w + 0.8, 0.5, depth, cx, rect.y + rect.h + 0.25, 0, stoneMat, group, true);
-    addFloorSpill(cx, rect.y, rect.w * 1.6, feel.passageSpillLength * 0.6, 1, ramp.ash, feel.passageSpillOpacity * 0.6);
+    addFloorSpill(cx, rect.y, rect.w * 1.6, feel.passageSpillLength * 0.6, 1, ramp.ash, feel.passageSpillOpacity * 0.6, roomClip);
   }
 
   function addBoundaryWall(wall: Rect, openings: Opening[], room: Room, feel: Feel): void {
@@ -2472,13 +3020,15 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       glow.scale.set(rect.w * 1.4, rect.h * 0.62, 1);
       glow.position.set(0, -rect.h * 0.08, -depth * 0.5 - 0.12);
       holder.add(glow);
-      registerDoorGlow(glow);
+      fitToClip(glow, roomClip);
+      const inward = roomClip === null || rect.x + rect.w * 0.5 > roomClip.x + roomClip.w * 0.5 ? -1 : 1;
       const floorGlow = new THREE.Mesh(glowGeometry, spillMaterial(ramp.amber, feel.passageSpillOpacity * 0.7));
       floorGlow.rotation.x = -Math.PI * 0.5;
       floorGlow.scale.set(rect.w * 2.6, feel.solidDepth * 0.42, 1);
-      floorGlow.position.set(-rect.w * 1.6, -rect.h * 0.5 + 0.012, 0);
+      floorGlow.position.set(inward * rect.w * 1.6, -rect.h * 0.5 + 0.012, 0);
       holder.add(floorGlow);
-      registerDoorGlow(floorGlow);
+      fitToClip(floorGlow, roomClip);
+      registerDoorGlow(floorGlow, roomClip, true);
     }
     const frameW = Math.max(rect.w, 0.3);
     const frameT = 0.14;
@@ -2540,11 +3090,14 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
 
       const fogColor = room.ambience === undefined ? undefined : room.ambience.fogColor;
       const pale = paleKey(ramp, fogColor);
-      keyLiftColor.setHex(fogColor === undefined ? ramp.void : fogColor);
+      roomFogHex = fogColor === undefined ? ramp.void : fogColor;
+      roomClip = { x: b.x, y: b.y, w: b.w, h: b.h };
+      keyLiftColor.setHex(roomFogHex);
+      const lift = Math.max(feel.paleKeyLift, 0);
       for (const entry of keyLiftTargets) {
-        entry.material.color.copy(entry.base).lerp(keyLiftColor, pale * KEY_LIFT);
-        entry.material.emissive.copy(keyLiftColor);
-        entry.material.emissiveIntensity = pale * KEY_LIFT * 0.4;
+        entry.material.color.copy(entry.base).lerp(keyLiftColor, pale * lift);
+        entry.material.emissive.setHex(0x000000);
+        entry.material.emissiveIntensity = 0;
       }
 
       const hallCenterY = b.y + b.h * 0.5;
@@ -2657,13 +3210,21 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
       const dawnSpan = Math.max(feel.dawnDoorGlow - 1, 0.001);
       const dawnAmount = Math.min(Math.max((doorGlow - 1) / dawnSpan, 0), 1);
 
+      const spillCap = Math.max(feel.dawnSpillCap, 1);
       for (const entry of doorGlows) {
         entry.material.opacity = Math.min(entry.opacity * doorGlow, 1);
-        entry.mesh.scale.x = entry.scaleX * (1 + 0.35 * dawnAmount);
-        entry.mesh.scale.y = entry.scaleY * (1 + 0.35 * dawnAmount);
+        const grow = Math.min(1 + 0.35 * dawnAmount, spillCap, entry.grow);
+        entry.mesh.scale.x = entry.scaleX * grow;
+        entry.mesh.scale.y = entry.lengthOnly ? entry.scaleY : entry.scaleY * grow;
+      }
+      for (const entry of doorPanels) {
+        entry.material.color
+          .copy(entry.base)
+          .lerp(dawnColor, dawnAmount * 0.4)
+          .multiplyScalar(1 + dawnAmount * 0.9);
       }
       for (const entry of doorLights) {
-        entry.light.intensity = entry.intensity * doorGlow;
+        entry.light.intensity = entry.intensity * Math.min(doorGlow, DOOR_LIGHT_DAWN_CAP);
       }
       for (const entry of doorPlates) {
         const lift = dawnAmount * entry.lift;
@@ -2718,6 +3279,28 @@ export function createRoomMesh(tuning: Tuning, look: LookProfile): RoomMesh {
           jar.halo.opacity = Math.min(haloBase * pulse, 1);
           if (jar.light !== null) {
             jar.light.intensity = feel.jarLightIntensity * jar.strength * pulse;
+          }
+        }
+      }
+
+      if (conduits.length > 0) {
+        const glow = Math.max(feel.conduitGlow, 0);
+        const speed = feel.conduitFlowSpeed;
+        for (const conduit of conduits) {
+          conduit.core.color.copy(conduit.base).multiplyScalar(glow * 0.4);
+          conduit.band.color.copy(conduit.base).multiplyScalar(glow);
+          const travel = t * speed + conduit.phase;
+          for (let i = 0; i < conduit.bands.length; i++) {
+            const band = conduit.bands[i];
+            if (band === undefined) continue;
+            const raw = (travel + (conduit.offsets[i] ?? 0)) % conduit.length;
+            const pos = conduit.start + (raw < 0 ? raw + conduit.length : raw);
+            if (conduit.axis === "x") band.position.x = pos;
+            else band.position.y = pos;
+          }
+          if (conduit.light !== null) {
+            conduit.light.intensity =
+              conduit.lightBase * (0.82 + 0.26 * Math.sin(t * speed + conduit.phase));
           }
         }
       }

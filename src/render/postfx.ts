@@ -441,7 +441,7 @@ class ShaftPass extends Pass {
     this.shaftQuad = new FullScreenQuad(this.shaftMaterial);
   }
 
-  configure(feel: Tuning["feel"], quality: number): void {
+  configure(feel: Tuning["feel"], quality: number, dirX: number): void {
     this.brightUniforms.uThreshold.value = Math.max(feel.shaftThreshold, 0.001);
     this.shaftUniforms.uStrength.value = feel.shaftStrength;
     this.shaftUniforms.uGain.value = Math.max(feel.shaftGain, 0);
@@ -450,7 +450,7 @@ class ShaftPass extends Pass {
       Math.max(Math.round(feel.shaftSamples * quality), 4),
       MAX_SHAFT_SAMPLES
     );
-    this.applyDirection(feel.shaftDirX, feel.shaftLength);
+    this.applyDirection(dirX, feel.shaftLength);
     this.enabled = feel.shaftStrength > 0.0005;
     if (quality !== this.quality) {
       this.quality = quality;
@@ -531,7 +531,7 @@ class ShaftPass extends Pass {
 }
 
 export interface Postfx {
-  sync(feel: Tuning["feel"]): void;
+  sync(feel: Tuning["feel"], shaftDirX?: number): void;
   render(): void;
   setSize(width: number, height: number): void;
 }
@@ -605,7 +605,7 @@ export function createPostfx(
   applySize(width, height);
 
   return {
-    sync(feel: Tuning["feel"]): void {
+    sync(feel: Tuning["feel"], shaftDirX?: number): void {
       syncLookUniforms(
         feel.textureGrain,
         feel.textureScale,
@@ -625,7 +625,7 @@ export function createPostfx(
       inkUniforms.uFar.value = far;
       ink.enabled = feel.inkOpacity > 0.0005 && feel.inkThickness > 0;
 
-      shafts.configure(feel, quality);
+      shafts.configure(feel, quality, shaftDirX === undefined ? feel.shaftDirX : shaftDirX);
 
       bloom.strength = feel.bloomStrength * bloomScale;
       bloom.radius = feel.bloomRadius;
