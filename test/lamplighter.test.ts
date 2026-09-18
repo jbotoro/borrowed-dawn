@@ -35,6 +35,115 @@ function lamplighterOf(enemies: Enemy[]): Enemy {
 }
 
 describe("lamplighter", () => {
+  it("closes horizontal distance to a courier in sight at chase speed", () => {
+    const room = lamplighterRoom();
+    const enemies = spawnEnemies(room, tuning);
+    const lamplighter = lamplighterOf(enemies);
+    const hazards = createHazards(tuning.world.hazardCapacity);
+    const player = playerAt(lamplighter.pos.x - 2, room.bounds.y + 1);
+    const initialDistance = Math.abs(player.pos.x - lamplighter.pos.x);
+    const steps = 30;
+
+    for (let i = 0; i < steps; i += 1) {
+      stepEnemies(enemies, player, room.solids, hazards, i * DT, DT, tuning);
+    }
+
+    const distance = Math.abs(player.pos.x - lamplighter.pos.x);
+    const closed = Math.min(initialDistance, tuning.lamplighter.chaseSpeed * steps * DT);
+    expect(distance).toBeLessThanOrEqual(initialDistance - closed + 1e-9);
+    expect(distance).toBeLessThan(initialDistance - tuning.lamplighter.patrolSpeed * steps * DT);
+    expect(lamplighter.facing).toBe(-1);
+  });
+
+  it("dips during the telegraph without crossing its swoop floor", () => {
+    const room = lamplighterRoom();
+    const enemies = spawnEnemies(room, tuning);
+    const lamplighter = lamplighterOf(enemies);
+    const hazards = createHazards(tuning.world.hazardCapacity);
+    const player = playerAt(lamplighter.pos.x, room.bounds.y + 1);
+    const hoverLine = room.enemies[0]!.y + tuning.lamplighter.hoverHeight;
+    const swoopFloor = hoverLine - tuning.lamplighter.swoopDepth;
+    let t = 0;
+
+    while (lamplighter.state !== "telegraph" && t < 4) {
+      stepEnemies(enemies, player, room.solids, hazards, t, DT, tuning);
+      t += DT;
+    }
+
+    const telegraphStartY = lamplighter.pos.y;
+    let lowestY = telegraphStartY;
+    while (lamplighter.state !== "patrol" && t < 5) {
+      stepEnemies(enemies, player, room.solids, hazards, t, DT, tuning);
+      t += DT;
+      lowestY = Math.min(lowestY, lamplighter.pos.y);
+      expect(lamplighter.pos.y).toBeGreaterThanOrEqual(swoopFloor);
+    }
+
+    expect(lowestY).toBeLessThan(hoverLine - tuning.lamplighter.bobAmp - DT);
+    expect(lamplighter.pos.y).toBeGreaterThan(lowestY);
+  });
+
+  it("aims its ember sideways at a pinned post toward a courier off to the side", () => {
+    const room = lamplighterRoom();
+    room.enemies = [
+      { id: 10, kind: "lamplighter", x: 10, y: 2.5, patrolMinX: 10, patrolMaxX: 10, facing: 1 }
+    ];
+    const enemies = spawnEnemies(room, tuning);
+    const hazards = createHazards(tuning.world.hazardCapacity);
+    const floorTop = room.solids[0]!.y + room.solids[0]!.h;
+    const courierX = 11;
+    const player = playerAt(courierX, floorTop);
+    let t = 0;
+    let sawEmber = false;
+    let lastEmberX = Number.NaN;
+    let landedX = Number.NaN;
+
+    while (Number.isNaN(landedX) && t < 8) {
+      stepEnemies(enemies, player, room.solids, hazards, t, DT, tuning);
+      stepHazards(hazards, room.bounds, room.solids, t, DT);
+      t += DT;
+      const ember = hazards.find((hazard) => hazard.alive && hazard.kind === "ember");
+      if (ember) {
+        sawEmber = true;
+        lastEmberX = ember.pos.x;
+      } else if (sawEmber) {
+        landedX = lastEmberX;
+      }
+    }
+
+    expect(sawEmber).toBe(true);
+    expect(Math.abs(landedX - courierX)).toBeLessThan(0.6);
+  });
+
+  it("chases a courier two units to the side and lands an ember on it", () => {
+    const room = lamplighterRoom();
+    const enemies = spawnEnemies(room, tuning);
+    const hazards = createHazards(tuning.world.hazardCapacity);
+    const floorTop = room.solids[0]!.y + room.solids[0]!.h;
+    const courierX = room.enemies[0]!.x + 2;
+    const player = playerAt(courierX, floorTop);
+    let t = 0;
+    let sawEmber = false;
+    let lastEmberX = Number.NaN;
+    let landedX = Number.NaN;
+
+    while (Number.isNaN(landedX) && t < 8) {
+      stepEnemies(enemies, player, room.solids, hazards, t, DT, tuning);
+      stepHazards(hazards, room.bounds, room.solids, t, DT);
+      t += DT;
+      const ember = hazards.find((hazard) => hazard.alive && hazard.kind === "ember");
+      if (ember) {
+        sawEmber = true;
+        lastEmberX = ember.pos.x;
+      } else if (sawEmber) {
+        landedX = lastEmberX;
+      }
+    }
+
+    expect(sawEmber).toBe(true);
+    expect(Math.abs(landedX - courierX)).toBeLessThan(0.6);
+  });
+
   it("does not target the courier from beyond its Gallery sight depth", () => {
     const game = createGame({
       tuning,
@@ -181,7 +290,8 @@ describe("lamplighter", () => {
 
     const ember = hazards.find((hazard) => hazard.alive);
     expect(ember?.kind).toBe("ember");
-    expect(ember?.vel.x).toBe(0);
+    expect(ember?.vel.x).toBeLessThan(0);
+    expect(Math.abs(ember?.vel.x ?? 0)).toBeLessThanOrEqual(tuning.lamplighter.emberSideSpeed);
     expect(ember?.vel.y).toBe(-tuning.lamplighter.emberFallSpeed);
     expect(lamplighter.state).toBe("attack");
 
@@ -208,7 +318,7 @@ describe("lamplighter", () => {
     const aboveEnemies = spawnEnemies(room, tuning);
     const above = lamplighterOf(aboveEnemies);
     const aboveHazards = createHazards(tuning.world.hazardCapacity);
-    const abovePlayer = playerAt(above.pos.x, above.pos.y + 1);
+    const abovePlayer = playerAt(above.pos.x, above.pos.y + 1 + tuning.lamplighter.bobAmp);
     let aboveTime = 0;
 
     while (aboveTime < duration) {

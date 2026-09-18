@@ -45,7 +45,8 @@ export function spawnEnemies(room: Room, tuning: Tuning, t = 0): Enemy[] {
       patrolMinX: placement.patrolMinX,
       patrolMaxX: placement.patrolMaxX,
       alive: true,
-      flash: 0
+      flash: 0,
+      swoop: 0
     });
   }
   return out;
@@ -74,19 +75,22 @@ function stepLamplighter(
       enemy.stateUntil = t + cfg.dropIntervalMs / 1000;
     }
   } else if (enemy.state === "patrol") {
-    if (enemy.pos.x <= enemy.patrolMinX) {
-      enemy.facing = 1;
-    } else if (enemy.pos.x >= enemy.patrolMaxX) {
-      enemy.facing = -1;
-    }
-    if (inSight) {
-      enemy.facing = player.pos.x < enemy.pos.x ? -1 : 1;
-    }
     if (inSight && t >= enemy.stateUntil) {
       enemy.state = "telegraph";
       enemy.stateUntil = t + cfg.dropTelegraphMs / 1000;
       enemy.vel.x = 0;
+    } else if (inSight) {
+      const chaseTargetX = Math.max(enemy.patrolMinX, Math.min(enemy.patrolMaxX, player.pos.x));
+      const toTarget = chaseTargetX - enemy.pos.x;
+      const reach = cfg.chaseSpeed * dt;
+      enemy.vel.x =
+        Math.abs(toTarget) <= reach ? toTarget / dt : (toTarget < 0 ? -1 : 1) * cfg.chaseSpeed;
     } else {
+      if (enemy.pos.x <= enemy.patrolMinX) {
+        enemy.facing = 1;
+      } else if (enemy.pos.x >= enemy.patrolMaxX) {
+        enemy.facing = -1;
+      }
       enemy.vel.x = enemy.facing * cfg.patrolSpeed;
     }
   } else if (enemy.state === "telegraph") {
@@ -94,6 +98,9 @@ function stepLamplighter(
     if (t >= enemy.stateUntil) {
       enemy.state = "attack";
       enemy.stateUntil = t + dt;
+      const fallTime = Math.max(enemy.pos.y - player.pos.y, 0) / cfg.emberFallSpeed;
+      const leadX = player.pos.x + player.vel.x * cfg.emberLeadFactor - enemy.pos.x;
+      const aimedX = fallTime > 0 ? leadX / fallTime : 0;
       spawnHazard(
         hazards,
         "ember",
@@ -101,7 +108,7 @@ function stepLamplighter(
         enemy.pos.y,
         cfg.emberWidth,
         cfg.emberHeight,
-        0,
+        Math.max(-cfg.emberSideSpeed, Math.min(cfg.emberSideSpeed, aimedX)),
         -cfg.emberFallSpeed,
         t + cfg.emberLifeMs / 1000,
         cfg.damage
@@ -125,7 +132,17 @@ function stepLamplighter(
   } else if (enemy.pos.x > enemy.patrolMaxX) {
     enemy.pos.x = enemy.patrolMaxX;
   }
-  enemy.pos.y = enemy.vel.y + Math.sin(t * cfg.bobSpeed) * cfg.bobAmp;
+  const swoopStep = cfg.swoopSpeed * dt;
+  if (enemy.state === "telegraph") {
+    enemy.swoop = Math.min(cfg.swoopDepth, enemy.swoop + swoopStep);
+  } else if (enemy.state !== "attack") {
+    enemy.swoop = Math.max(0, enemy.swoop - swoopStep);
+  }
+  const hoverY = enemy.vel.y;
+  enemy.pos.y = Math.max(
+    hoverY - cfg.swoopDepth,
+    hoverY - enemy.swoop + Math.sin(t * cfg.bobSpeed) * cfg.bobAmp
+  );
   enemy.grounded = false;
 }
 

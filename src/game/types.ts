@@ -69,6 +69,7 @@ export interface Enemy {
   patrolMaxX: number;
   alive: boolean;
   flash: number;
+  swoop: number;
 }
 
 export type BossState =
@@ -191,7 +192,10 @@ export type DecorKind =
   | "rubble"
   | "lamp"
   | "pipe"
-  | "veil";
+  | "veil"
+  | "jar"
+  | "lens"
+  | "sunlight";
 
 export interface Decor {
   kind: DecorKind;
